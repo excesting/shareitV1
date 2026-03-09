@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Daily Log - Food Consumption{% endblock %}
+
+{% block head %}
+<style>
+    /* Fixed height and scrollable area for history logs */
+    .scrollable-history {
+        max-height: 450px; /* Adjust height as needed */
+        overflow-y: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+    }
+
+    /* Keep the table headers visible while scrolling */
+    .scrollable-history thead th {
+        position: sticky;
+        top: 0;
+        background-color: #f8fafc;
+        z-index: 10;
+        border-bottom: 2px solid #cbd5e1;
+    }
+
+    /* Styling for the items entry table to keep it compact */
+    .items-entry-container {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+  <div class="card-header">
+    <h1 class="card-title"><i class="fas fa-clipboard-list text-primary"></i> Daily Consumption Log</h1>
+    <p class="card-subtitle">Record daily customers and actual ingredient consumption.</p>
+  </div>
+</div>
+
+<div class="grid grid-4 mb-6">
+  <div class="stats-card"><div class="stats-number" id="dlTotalLogs">0</div><div class="stats-label">Saved Logs</div></div>
+  <div class="stats-card"><div class="stats-number" id="dlLastDate">-</div><div class="stats-label">Latest Date</div></div>
+  <div class="stats-card"><div class="stats-number" id="dlLastBranch">-</div><div class="stats-label">Latest Branch</div></div>
+  <div class="stats-card"><div class="stats-number" id="dlLastCustomers">-</div><div class="stats-label">Latest Customers</div></div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">
+    <h2 class="card-title"><i class="fas fa-pen-to-square text-primary"></i> New / Update Log</h2>
+  </div>
+  <form id="dailyLogForm" style="padding: 20px;">
+    <div class="grid grid-4 mb-4">
+      <div class="form-group">
+        <label class="form-label" for="dlDate"><i class="fas fa-calendar"></i> Date</label>
+        <input id="dlDate" type="date" class="form-control" required />
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" for="dlBranch"><i class="fas fa-store"></i> Branch</label>
+        <select id="dlBranch" class="form-control" required>
+          <option value="0" selected>Lipa (Main)</option>
+          <option value="1">Malvar</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="dlCustomers"><i class="fas fa-users"></i> Customers</label>
+        <input id="dlCustomers" type="number" class="form-control" min="0" step="1" required />
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" for="dlRemarks"><i class="fas fa-tag"></i> Remarks</label>
+        <select id="dlRemarks" class="form-control">
+          <option value="Normal" selected>Normal</option>
+          <option value="Holiday">Holiday</option>
+          <option value="Event">Event</option>
+          <option value="Promo">Promo</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="items-entry-container">
+      <table class="table mb-0">
+        <thead>
+            <tr>
+                <th style="width: 45%;">Ingredient</th>
+                <th style="width: 15%;">Unit</th>
+                <th style="width: 40%;">Consumed Qty</th>
+            </tr>
+        </thead>
+        <tbody id="dlItemsBody">
+            </tbody>
+      </table>
+    </div>
+
+    <div class="d-flex justify-between items-center" style="gap: 0.75rem;">
+      <div class="d-flex items-center" style="gap: 0.75rem;">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Log</button>
+        <button type="button" class="btn btn-warning" id="dlResetBtn"><i class="fas fa-rotate-left"></i> Reset Form</button>
+      </div>
+      <button type="button" class="btn btn-danger" id="dlClearAllBtn"><i class="fas fa-trash"></i> Clear All Logs</button>
+    </div>
+  </form>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">
+    <h2 class="card-title"><i class="fas fa-clock-rotate-left text-primary"></i> Daily Log History</h2>
+  </div>
+  
+  <div class="scrollable-history">
+    <table class="table mb-0">
+      <thead>
+        <tr>
+            <th>Date</th>
+            <th>Branch</th>
+            <th>Customers</th>
+            <th>Remarks</th>
+            <th>Top Items</th>
+            <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="dlHistoryBody">
+          <tr><td colspan="6" class="text-center text-muted">No logs yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

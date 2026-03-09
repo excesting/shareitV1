@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory - Food Consumption{% endblock %}
+{% block page_title %}Inventory{% endblock %}
+
+{% block content %}
+<div class="grid grid-4 mb-6">
+  <div class="stats-card"><div class="stats-number" id="invTotalItems">-</div><div class="stats-label">Total Items</div></div>
+  <div class="stats-card"><div class="stats-number text-warning" id="invLowStock">-</div><div class="stats-label">Low Stock</div></div>
+  <div class="stats-card"><div class="stats-number text-danger" id="invOutOfStock">-</div><div class="stats-label">Out of Stock</div></div>
+  <div class="stats-card"><div class="stats-number text-primary" id="invActionRequired">-</div><div class="stats-label">Items to Reorder</div></div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">
+    <h2 class="card-title"><i class="fas fa-sliders text-primary"></i> Inventory Controls</h2>
+  </div>
+  <div class="inventory-controls">
+    <div class="grid grid-4">
+      <div class="form-group">
+        <label class="form-label" for="invBranchFilter"><i class="fas fa-store"></i> View Branch</label>
+        <select id="invBranchFilter" class="form-control">
+          <option value="all">All Branches</option>
+          <option value="0" selected>Lipa (Main)</option>
+          <option value="1">Malvar</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="invSearch"><i class="fas fa-magnifying-glass"></i> Search</label>
+        <input id="invSearch" class="form-control" placeholder="Search ingredient..." />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="invFilter"><i class="fas fa-filter"></i> Stock Status</label>
+        <select id="invFilter" class="form-control">
+          <option value="all">All items</option>
+          <option value="low">Low stock only</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">&nbsp;</label>
+        <div class="d-flex items-center" style="gap: 0.75rem;">
+          <button id="btnAddItem" class="btn btn-primary w-full"><i class="fas fa-plus"></i> Add Item</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="table-container">
+    <table class="table">
+      <thead><tr><th>Branch</th><th>Product Name</th><th>Unit</th><th>Current Stock</th><th>Min Level</th><th>Max Level</th><th>Action</th></tr></thead>
+      <tbody id="inventoryTableBody"></tbody>
+    </table>
+  </div>
+  <div id="inventoryEmptyState" class="text-center p-6 d-none">
+    <i class="fas fa-box-open fa-3x text-info mb-3"></i><h3 class="text-info">No inventory items</h3>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-robot text-primary"></i>
+      AI-Powered Reorder Recommendations
+    </h2>
+    <p class="card-subtitle">
+      Calculates Safety Stock and Reorder Points using AI demand forecasts per branch and specific item models.
+    </p>
+  </div>
+
+  <div class="grid grid-5 mb-4">
+    <div class="form-group">
+      <label class="form-label" for="rrBranch"><i class="fas fa-store"></i> Branch Target</label>
+      <select id="rrBranch" class="form-control">
+        <option value="0" selected>Lipa (Main)</option>
+        <option value="1">Malvar</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="rrItemFilter"><i class="fas fa-box"></i> Target Item</label>
+      <select id="rrItemFilter" class="form-control">
+        <option value="all" selected>All Ingredients</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="rrLeadTime"><i class="fas fa-clock"></i> Lead Time (days)</label>
+      <input id="rrLeadTime" type="number" class="form-control" min="0" step="1" value="2" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="rrServiceLevel"><i class="fas fa-shield-halved"></i> Service Level</label>
+      <select id="serviceLevel" class="form-control">
+              <option value="0.00">50% (Zero Buffer - High Perishability)</option>
+              <option value="0.674">75% (Low Buffer)</option>
+              <option value="1.28">90% (Medium Buffer)</option>
+              <option value="1.645" selected>95% (Standard)</option>
+              <option value="2.33">99% (Never Run Out)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="rrHorizon"><i class="fas fa-calendar-day"></i> Horizon (days)</label>
+      <input id="rrHorizon" type="number" class="form-control" min="1" step="1" value="7" />
+    </div>
+    
+    <div class="form-group" style="grid-column: span 5;">
+      <button id="btnRefreshReorder" class="btn btn-primary w-full btn-lg">
+        <i class="fas fa-wand-magic-sparkles"></i> Generate AI Recommendations
+      </button>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Unit</th>
+          <th>Model</th>
+          <th>Current Stock</th>
+          <th>Safety Stock</th>
+          <th>AI ROP</th>
+          <th>AI Target (Max)</th>
+          <th>Suggested Order</th>
+          <th>Priority</th>
+        </tr>
+      </thead>
+      <tbody id="reorderTableBody">
+        <tr>
+          <td colspan="9" class="text-center text-muted p-4">Select a branch and click generate to calculate AI recommendations.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="inventoryModal" class="modal d-none" aria-hidden="true">
+  <div class="modal-overlay" data-close="true"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="mb-0" id="modalTitle"><i class="fas fa-pen-to-square text-primary"></i> Add / Edit Item</h3>
+      <button class="modal-close" type="button" data-close="true"><i class="fas fa-xmark"></i></button>
+    </div>
+    <form id="inventoryForm" class="modal-body">
+      <input type="hidden" id="invId" />
+      <div class="grid grid-2">
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label" for="invBranch">Assign to Branch</label>
+          <select id="invBranch" class="form-control" required>
+            <option value="0">Lipa (Main)</option>
+            <option value="1">Malvar</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="invName">Name</label>
+          <input id="invName" class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="invUnit">Unit</label>
+          <select id="invUnit" class="form-control" required>
+            <option value="kg">kg</option>
+            <option value="L">L</option> 
+            <option value="pcs">pcs</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label" for="invReorderModel"><i class="fas fa-calculator"></i> AI Math Model</label>
+          <select id="invReorderModel" class="form-control" required>
+            <option value="rop">Standard ROP (Frozen/Dry/Long Shelf-Life)</option>
+            <option value="newsvendor">Newsvendor (Fresh/Perishable/Short Shelf-Life)</option>
+          </select>
+          <small class="text-muted text-xs">Determines how AI calculates restock targets.</small>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="invStock">Current Stock</label>
+          <input id="invStock" type="number" class="form-control" min="0" step="0.01" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="invMin">Min Level (Alert)</label>
+          <input id="invMin" type="number" class="form-control" min="0" step="0.01" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="invMax">Max Level (Capacity)</label>
+          <input id="invMax" type="number" class="form-control" min="0" step="0.01" required />
+        </div>
+      </div>
+      <div class="d-flex justify-end items-center mt-4" style="gap: 0.75rem;">
+        <button type="button" class="btn btn-secondary" data-close="true">Cancel</button>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Item</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

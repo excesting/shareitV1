@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - D-inventy{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="grid grid-4 mb-6">
+    <div class="stats-card">
+        <div class="stats-icon"><i class="fas fa-box"></i></div>
+        <div class="stats-label">Total Products</div>
+        <div class="stats-number" id="totalProducts">-</div>
+        <div class="stats-trend positive"><i class="fas fa-arrow-up"></i> Active</div>
+    </div>
+    
+    <div class="stats-card">
+        <div class="stats-icon"><i class="fas fa-triangle-exclamation"></i></div>
+        <div class="stats-label">Low Stock Items</div>
+        <div class="stats-number text-warning" id="lowStockCount">-</div>
+        <div class="stats-trend negative"><i class="fas fa-arrow-down"></i> Action Req</div>
+    </div>
+    
+    <div class="stats-card">
+        <div class="stats-icon"><i class="fas fa-clipboard-list"></i></div>
+        <div class="stats-label">Total Logs</div>
+        <div class="stats-number" id="totalRevenue">-</div>
+        <div class="stats-trend positive"><i class="fas fa-arrow-up"></i> Updated</div>
+    </div>
+    
+    <div class="stats-card">
+        <div class="stats-icon"><i class="fas fa-robot"></i></div>
+        <div class="stats-label">AI Predictions Run</div>
+        <div class="stats-number" id="nearExpiryCount">-</div>
+        <div class="stats-trend positive"><i class="fas fa-check"></i> Ready</div>
+    </div>
+</div>
+
+<div class="grid grid-3 mb-6">
+    <div class="card text-center">
+        <div class="card-header" style="justify-content: center;">
+            <i class="fas fa-boxes fa-3x text-primary mb-3"></i>
+        </div>
+        <h3 class="card-title" style="justify-content: center;">Inventory Management</h3>
+        <p class="card-subtitle mb-4">Track stock levels and monitor product information efficiently</p>
+        <a href="/inventory" class="btn btn-secondary w-full">View Inventory</a>
+    </div>
+    
+    <div class="card text-center">
+        <div class="card-header" style="justify-content: center;">
+            <i class="fas fa-chart-bar fa-3x text-primary mb-3"></i>
+        </div>
+        <h3 class="card-title" style="justify-content: center;">Consumption Analytics</h3>
+        <p class="card-subtitle mb-4">Analyze trends, identify top-consumed ingredients</p>
+        <a href="/analytics" class="btn btn-secondary w-full">View Analytics</a>
+    </div>
+    
+    <div class="card text-center">
+        <div class="card-header" style="justify-content: center;">
+            <i class="fas fa-brain fa-3x text-primary mb-3"></i>
+        </div>
+        <h3 class="card-title" style="justify-content: center;">AI Predictions</h3>
+        <p class="card-subtitle mb-4">Use machine learning to predict demand and optimize</p>
+        <a href="/predict" class="btn btn-secondary w-full">Make Predictions</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-list-check"></i> Current Inventory Status</h2>
+    </div>
+    <div class="table-responsive" style="overflow-x: auto; padding: 0 20px 20px 20px;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead>
+                <tr style="border-bottom: 2px solid #eaeaea;">
+                    <th style="padding: 12px 8px;">Branch ID</th>
+                    <th style="padding: 12px 8px;">Item Name</th>
+                    <th style="padding: 12px 8px;">Current Stock</th>
+                    <th style="padding: 12px 8px;">Min Level (ROP)</th>
+                    <th style="padding: 12px 8px;">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in inventory %}
+                <tr style="border-bottom: 1px solid #eaeaea;">
+                    <td style="padding: 12px 8px;">{{ item.branch_id }}</td>
+                    <td style="padding: 12px 8px;"><strong>{{ item.name }}</strong></td>
+                    <td style="padding: 12px 8px;">{{ item.stock }} {{ item.unit }}</td>
+                    <td style="padding: 12px 8px;">{{ item.min_level }} {{ item.unit }}</td>
+                    <td style="padding: 12px 8px;">
+                        {% if item.stock <= item.min_level %}
+                            <span style="color: #dc3545; font-weight: bold;">
+                                <i class="fas fa-exclamation-circle"></i> Reorder Needed
+                            </span>
+                        {% else %}
+                            <span style="color: #28a745; font-weight: 500;">
+                                <i class="fas fa-check-circle"></i> Sufficient
+                            </span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" style="padding: 20px; text-align: center; color: #666;">
+                        No inventory data available in the database yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/dashboard-stats')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 1. Total Products
+                document.getElementById('totalProducts').textContent = data.stats.totalProducts || 0;
+                
+                // 2. Low Stock Items
+                document.getElementById('lowStockCount').textContent = data.stats.lowStockCount || 0;
+                
+                // 3. Total Logs (Your HTML uses 'totalRevenue' as the ID for this)
+                document.getElementById('totalRevenue').textContent = data.stats.totalLogs || 0;
+                
+                // 4. AI Predictions Run (Your HTML uses 'nearExpiryCount' as the ID for this)
+                document.getElementById('nearExpiryCount').textContent = data.stats.totalPredictions || 0;
+                
+            } else {
+                console.error("Failed to load dashboard stats:", data.error);
+            }
+        })
+        .catch(error => {
+            console.error("Error fetching stats:", error);
+            // Fallback to zeros if the server connection fails
+            document.getElementById('nearExpiryCount').textContent = "0";
+        });
+});
+</script>
+
+{% endblock %}

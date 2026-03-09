@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Predictions - Food Consumption{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+  <div class="card-header">
+    <h1 class="card-title"><i class="fas fa-wand-magic-sparkles text-primary"></i> Consumption & Customer Forecast</h1>
+    <p class="card-subtitle">Predict expected customers and ingredient consumption using the backend API.</p>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">
+    <h2 class="card-title"><i class="fas fa-sliders text-primary"></i> Forecast Inputs</h2>
+    <p class="card-subtitle">Choose a date and branch. Weekday and Month will be derived automatically.</p>
+  </div>
+
+  <form id="predictionForm" action="javascript:void(0)">
+    <div class="grid grid-4">
+        <div class="form-group">
+          <label class="form-label" for="pfStartDate"><i class="fas fa-calendar"></i> Start Date</label>
+          <input id="pfStartDate" name="start_date" type="date" class="form-control" required />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="pfHorizon"><i class="fas fa-clock"></i> Forecast Horizon</label>
+          <select id="pfHorizon" name="horizon_days" class="form-control" required>
+            <option value="3">Next 3 Days</option>
+            <option value="7" selected>Next 7 Days</option>
+            <option value="14">Next 14 Days</option>
+            <option value="30">Next 30 Days</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="pfBranch"><i class="fas fa-store"></i> Branch</label>
+            <select id="pfBranch" class="form-control" required>
+              <option value="0">Lipa</option>
+              <option value="1">Malvar</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label"><i class="fas fa-info-circle"></i> Forecast Window</label>
+          <div class="form-control" id="pfDerived" style="display:flex;align-items:center;">
+            <small class="text-muted">Range details will show here.</small>
+          </div>
+        </div>
+    </div>
+
+    <div class="grid grid-3 mt-4">
+      <div class="form-group">
+        <label class="form-label" for="pfMode"><i class="fas fa-bullseye"></i> Mode</label>
+        <select id="pfMode" name="mode" class="form-control">
+          <option value="all" selected>Predict Customers + All Ingredients</option>
+          <option value="one">Predict Customers + Selected Ingredient</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="pfItemWrap">
+        <label class="form-label" for="pfItem"><i class="fas fa-utensils"></i> Ingredient</label>
+        <select id="pfItem" name="item" class="form-control"></select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">&nbsp;</label>
+        <button type="submit" class="btn btn-primary btn-lg w-full">
+          <i class="fas fa-calculator"></i> Run Forecast
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="grid grid-2 mb-6">
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title"><i class="fas fa-users text-primary"></i> Predicted Customers</h2>
+    </div>
+    <div class="p-4">
+      <div class="stats-number" id="predCustomers">-</div>
+      <div class="stats-label">Customers</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title"><i class="fas fa-utensils text-success"></i> Consumption Summary</h2>
+    </div>
+    <div class="p-4" id="predSummary">
+      <p class="text-muted">Run a forecast to see results.</p>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">
+    <h2 class="card-title"><i class="fas fa-calendar-week text-primary"></i> Daily Consumption Cards</h2>
+  </div>
+  <div class="p-3" id="predDailyCards">
+    <p class="text-muted">Run a forecast to see daily results.</p>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">
+    <h2 class="card-title"><i class="fas fa-clock-rotate-left text-primary"></i> Prediction DB History</h2>
+  </div>
+  <div class="d-flex justify-end items-center p-3">
+    <button id="btnClearPredHistory" class="btn btn-danger"><i class="fas fa-trash"></i> Clear History</button>
+  </div>
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Date Range</th><th>Branch</th><th>Remarks</th><th>Customers</th><th>Top Items</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="predHistoryBody"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
