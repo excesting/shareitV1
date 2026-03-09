@@ -80,18 +80,6 @@ def init_db():
             """)
             
             # Automatically create default accounts if none exist
-            cur.execute("SELECT COUNT(*) FROM users")
-            if cur.fetchone()[0] == 0:
-                default_users = [
-                    ('admin', generate_password_hash('admin123'), 'admin', 0),
-                    ('lipa_mgr', generate_password_hash('lipa123'), 'manager', 0),
-                    ('malvar_mgr', generate_password_hash('malvar123'), 'manager', 1)
-                ]
-                # PostgreSQL uses %s instead of ?
-                cur.executemany(
-                    "INSERT INTO users (username, password_hash, role, branch_id) VALUES (%s, %s, %s, %s)", 
-                    default_users
-                )
         conn.commit()
 
 init_db()
