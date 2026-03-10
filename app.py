@@ -80,18 +80,6 @@ def init_db():
             """)
             
             # Automatically create default accounts if none exist
-            cur.execute("SELECT COUNT(*) FROM users")
-            if cur.fetchone()[0] == 0:
-                default_users = [
-                    ('admin', generate_password_hash('admin123'), 'admin', 0),
-                    ('lipa_mgr', generate_password_hash('lipa123'), 'manager', 0),
-                    ('malvar_mgr', generate_password_hash('malvar123'), 'manager', 1)
-                ]
-                # PostgreSQL uses %s instead of ?
-                cur.executemany(
-                    "INSERT INTO users (username, password_hash, role, branch_id) VALUES (%s, %s, %s, %s)", 
-                    default_users
-                )
         conn.commit()
 
 init_db()
@@ -363,16 +351,22 @@ def save_daily_log():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/daily-logs/clear', methods=['DELETE'])
+@app.route('/api/daily-logs/<int:log_id>', methods=['DELETE'])
 @login_required
-def clear_daily_logs():
+def delete_single_daily_log(log_id):
     try:
-        if session.get('role') != 'admin':
-            return jsonify({"success": False, "error": "CRITICAL: Only admins can wipe database history."}), 403
-            
         db = get_db()
         cur = db.cursor()
-        cur.execute("DELETE FROM daily_logs")
+        
+        # Security Check: Ensure Managers can only delete logs from their own branch
+        if session.get('role') != 'admin':
+            cur.execute("SELECT branch_id FROM daily_logs WHERE id = %s", (log_id,))
+            log = cur.fetchone()
+            if not log or log['branch_id'] != session.get('branch_id'):
+                return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+        # Execute the delete command
+        cur.execute("DELETE FROM daily_logs WHERE id = %s", (log_id,))
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
