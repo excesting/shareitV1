@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SHAREAT PRIMA</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <title>SHAREAT PRIMA | Login</title>
+    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='images/shareat.jpg') }}?v=2">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
@@ -24,14 +27,41 @@
             width: 100%;
             max-width: 400px;
         }
+        
+        /* NEW BRAND STYLING */
         .brand {
-            text-align: center;
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
             margin-bottom: 30px;
         }
-        .brand i { color: #3b82f6; margin-right: 8px; }
+        .brand img {
+            width: 50px; 
+            height: 50px; 
+            border-radius: 50%; 
+            object-fit: cover; 
+            border: 1px solid #e5e7eb;
+        }
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+        .brand-text .title {
+            font-weight: 800;
+            font-size: 1.6rem;
+            color: #111827;
+            line-height: 1;
+        }
+        .brand-text .subtitle {
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #dc2626;
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: 500; color: #475569; font-size: 0.875rem;}
         input {
@@ -69,8 +99,13 @@
 <body>
 
     <div class="login-card">
+        
         <div class="brand">
-            <i class="fas fa-boxes"></i> SHAREAT PRIMA
+            <img src="{{ url_for('static', filename='images/shareat.jpg') }}" alt="Shareat Logo">
+            <div class="brand-text">
+                <span class="title">SHAREAT</span>
+                <span class="subtitle">PRIMA</span>
+            </div>
         </div>
         
         {% with messages = get_flashed_messages() %}
