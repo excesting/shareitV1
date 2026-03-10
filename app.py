@@ -351,16 +351,22 @@ def save_daily_log():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/daily-logs/clear', methods=['DELETE'])
+@app.route('/api/daily-logs/<int:log_id>', methods=['DELETE'])
 @login_required
-def clear_daily_logs():
+def delete_single_daily_log(log_id):
     try:
-        if session.get('role') != 'admin':
-            return jsonify({"success": False, "error": "CRITICAL: Only admins can wipe database history."}), 403
-            
         db = get_db()
         cur = db.cursor()
-        cur.execute("DELETE FROM daily_logs")
+        
+        # Security Check: Ensure Managers can only delete logs from their own branch
+        if session.get('role') != 'admin':
+            cur.execute("SELECT branch_id FROM daily_logs WHERE id = %s", (log_id,))
+            log = cur.fetchone()
+            if not log or log['branch_id'] != session.get('branch_id'):
+                return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+        # Execute the delete command
+        cur.execute("DELETE FROM daily_logs WHERE id = %s", (log_id,))
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
