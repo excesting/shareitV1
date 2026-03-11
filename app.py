@@ -383,7 +383,26 @@ def delete_single_daily_log(log_id):
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+        
+#delete all logs (Admin Only)
+@app.route('/api/daily-logs/clear', methods=['DELETE'])
+@login_required
+def clear_all_daily_logs():
+    try:
+        # Security Check: Only the Admin should be allowed to nuke the entire database
+        if session.get('role') != 'admin':
+            return jsonify({"success": False, "error": "Unauthorized. Only admins can clear all logs."}), 403
 
+        db = get_db()
+        cur = db.cursor()
+        
+        # Execute the delete command on the whole table
+        cur.execute("DELETE FROM daily_logs")
+        db.commit()
+        
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 # ==========================================
 # API Routes: Prediction & Forecasting
 # ==========================================
