@@ -1208,13 +1208,51 @@ class IMSApp {
   
   makeId() { return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 
-  showNotification(message, type = "info") {
-    const notification = document.createElement("div");
-    notification.className = `notification alert alert-${type === "error" ? "danger" : "success"}`;
-    notification.style.cssText = `position: fixed; top: 20px; right: 20px; z-index: 10000; box-shadow: var(--shadow-lg);`;
-    notification.innerHTML = `<span>${this.escapeHtml(message)}</span>`;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 4000);
+  showNotification(message, type = "success") {
+      // 1. Create the container if it doesn't exist yet
+      let container = document.getElementById('toast-container');
+      if (!container) {
+          container = document.createElement('div');
+          container.id = 'toast-container';
+          document.body.appendChild(container);
+      }
+
+      // 2. Build the Toast Card
+      const toast = document.createElement('div');
+      toast.className = `toast-card toast-${type}`;
+
+      // 3. Set dynamic icon and title based on success/error
+      const iconClass = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
+      const titleText = type === 'success' ? 'Success' : 'Error';
+
+      // 4. Inject the HTML into the card
+      toast.innerHTML = `
+          <div class="toast-icon">
+              <i class="${iconClass}"></i>
+          </div>
+          <div class="toast-content">
+              <div class="toast-title">${titleText}</div>
+              <div class="toast-message">${message}</div>
+          </div>
+          <button class="toast-close">&times;</button>
+      `;
+
+      // 5. Add Click-to-Close functionality
+      toast.querySelector('.toast-close').addEventListener('click', () => {
+          toast.classList.add('hide');
+          setTimeout(() => toast.remove(), 300); // Wait for fade-out animation
+      });
+
+      // 6. Add it to the screen
+      container.appendChild(toast);
+
+      // 7. Auto-dismiss after 3.5 seconds
+      setTimeout(() => {
+          if (toast.parentElement) {
+              toast.classList.add('hide');
+              setTimeout(() => toast.remove(), 300);
+          }
+      }, 3500);
   }
 
   showLoading(element, message = "") {
