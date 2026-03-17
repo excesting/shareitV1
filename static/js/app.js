@@ -27,6 +27,7 @@ class IMSApp {
     this.initDailyLogPage();
     this.initFoodPredictionPage();
     this.initFoodAnalyticsPage();
+    this.initReportsPage(); // <-- THIS IS THE MAGIC LINK!
   }
 
   // ==========================================
@@ -420,11 +421,7 @@ class IMSApp {
         let safetyStock = 0, dynamicROP = 0, dynamicMax = 0, suggestedOrder = 0;
         const horizonDemand = avgDailyPred * horizon;
 
-        // ==========================================
-        // MATH LOGIC: ROP vs. DAILY PROCUREMENT NEWSVENDOR
-        // ==========================================
         if (modelType === "newsvendor") {
-          // DAILY PROCUREMENT: We only need enough buffer to survive 1 day of volatility
           safetyStock = Z * stdDev; 
           
           dynamicMax = horizonDemand + safetyStock; 
@@ -435,9 +432,8 @@ class IMSApp {
           }
         } 
         else {
-          // STANDARD ROP (Non-Perishables / Bulk Deliveries)
           let rawSafetyStock = Z * stdDev * Math.sqrt(leadTime);
-          safetyStock = Math.min(rawSafetyStock, avgDailyPred * 3); // Cap extreme variance at 3 days
+          safetyStock = Math.min(rawSafetyStock, avgDailyPred * 3); 
           
           const expectedLeadTimeDemand = avgDailyPred * leadTime;
           dynamicROP = expectedLeadTimeDemand + safetyStock;
@@ -448,7 +444,6 @@ class IMSApp {
           }
         }
 
-        // Priority Logic
         let priorityScore = 50;
         let priorityLabel = "OK";
         
@@ -1205,11 +1200,81 @@ class IMSApp {
     
     this.charts[chartKey] = new Chart(ctx, config);
   }
-  
+
+  // ==========================================
+  // 10. REPORTS ENGINE (NEW!)
+  // ==========================================
+  initReportsPage() {
+    const form = document.getElementById("reportForm");
+    if (!form) return;
+
+    this.rep = {
+      form,
+      type: document.getElementById("repType"),
+      branch: document.getElementById("repBranch"),
+      startDate: document.getElementById("repStartDate"),
+      endDate: document.getElementById("repEndDate"),
+      outputCard: document.getElementById("reportOutputCard"),
+      outputTitle: document.getElementById("reportOutputTitle"),
+      timestamp: document.getElementById("reportTimestamp"),
+      head: document.getElementById("reportHead"),
+      body: document.getElementById("reportBody"),
+      btnPrint: document.getElementById("btnPrintReport")
+    };
+
+    this.rep.form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await this.generateReportViaApi();
+    });
+  }
+
+  async generateReportViaApi() {
+    const payload = {
+      type: this.rep.type.value,
+      branch_id: this.rep.branch.value,
+      start_date: this.rep.startDate.value,
+      end_date: this.rep.endDate.value
+    };
+
+    try {
+      this.showLoading(this.rep.form, "Crunching report data...");
+      const res = await fetch("/api/reports/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      
+      if (!data.success) throw new Error(data.error);
+
+      // Render the Table
+      this.rep.outputTitle.innerHTML = `<i class="fas fa-file-alt text-primary"></i> ${data.title}`;
+      this.rep.timestamp.textContent = new Date().toLocaleString();
+      
+      this.rep.head.innerHTML = `<tr>${data.columns.map(c => `<th>${this.escapeHtml(c)}</th>`).join('')}</tr>`;
+      
+      if (data.data.length === 0) {
+          this.rep.body.innerHTML = `<tr><td colspan="${data.columns.length}" class="text-center text-muted">No data found for this report.</td></tr>`;
+      } else {
+          this.rep.body.innerHTML = data.data.map(row => `<tr>${row.map(cell => `<td>${this.escapeHtml(String(cell))}</td>`).join('')}</tr>`).join('');
+      }
+
+      this.rep.outputCard.classList.remove("d-none");
+      this.rep.btnPrint.classList.remove("d-none");
+      this.showNotification("Report generated successfully.", "success");
+
+    } catch (e) {
+      this.showNotification(e.message, "error");
+    } finally {
+      this.hideLoading(this.rep.form);
+    }
+  }
+
+  // ==========================================
+  // HELPERS & UTILITIES
+  // ==========================================
   makeId() { return Math.random().toString(16).slice(2) + Date.now().toString(16); }
 
   showNotification(message, type = "success") {
-      // 1. Create the container if it doesn't exist yet
       let container = document.getElementById('toast-container');
       if (!container) {
           container = document.createElement('div');
@@ -1217,15 +1282,12 @@ class IMSApp {
           document.body.appendChild(container);
       }
 
-      // 2. Build the Toast Card
       const toast = document.createElement('div');
       toast.className = `toast-card toast-${type}`;
 
-      // 3. Set dynamic icon and title based on success/error
       const iconClass = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
       const titleText = type === 'success' ? 'Success' : 'Error';
 
-      // 4. Inject the HTML into the card
       toast.innerHTML = `
           <div class="toast-icon">
               <i class="${iconClass}"></i>
@@ -1237,16 +1299,13 @@ class IMSApp {
           <button class="toast-close">&times;</button>
       `;
 
-      // 5. Add Click-to-Close functionality
       toast.querySelector('.toast-close').addEventListener('click', () => {
           toast.classList.add('hide');
-          setTimeout(() => toast.remove(), 300); // Wait for fade-out animation
+          setTimeout(() => toast.remove(), 300); 
       });
 
-      // 6. Add it to the screen
       container.appendChild(toast);
 
-      // 7. Auto-dismiss after 3.5 seconds
       setTimeout(() => {
           if (toast.parentElement) {
               toast.classList.add('hide');
