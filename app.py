@@ -77,7 +77,6 @@ def init_db():
                     role TEXT NOT NULL,
                     branch_id INTEGER NOT NULL
                 );
-                
             """)
             
             # Automatically create default accounts if none exist
@@ -403,6 +402,322 @@ def clear_all_daily_logs():
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+# ==========================================
+# API Routes: REPORTS ENGINE
+# ==========================================
+@app.route('/reports')
+@login_required
+def reports_page():
+    return render_template('reports.html')
+
+@app.route('/api/reports/generate', methods=['POST'])
+@login_required
+def generate_report():
+    data = request.json
+    rep_type = data.get('type')
+    requested_branch_id = data.get('branch_id')
+    
+    # --- SECURITY OVERRIDE ---
+    user_role = session.get('role')
+    user_branch_id = session.get('branch_id')
+    
+    if user_role != 'admin':
+        branch_id = str(user_branch_id)
+    else:
+        branch_id = str(requested_branch_id)
+    # -------------------------
+
+    db = get_db()
+    cur = db.cursor()
+    params = []
+    
+    try:
+        # REPORT 1: Inventory Status
+        if rep_type == "inventory_status":
+            branch_filter = ""
+            if branch_id != "all":
+                branch_filter = "WHERE branch_id = %s"
+                params.append(int(branch_id))
+                
+            cur.execute(f"SELECT branch_id, name, unit, stock, min_level, max_level FROM inventory {branch_filter} ORDER BY name", tuple(params))
+            rows = cur.fetchall()
+            columns = ["Branch", "Item Name", "Unit", "Current Stock", "Min Level", "Max Level", "Status"]
+            
+            report_data = []
+            for r in rows:
+                status = "OK"
+                if r['stock'] <= 0: status = "Out of Stock"
+                elif r['stock'] <= r['min_level']: status = "Low Stock"
+                
+                b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
+                report_data.append([b_name, r['name'], r['unit'], round(r['stock'], 2), r['min_level'], r['max_level'], status])
+            
+            return jsonify({"success": True, "title": "Inventory Status Report", "columns": columns, "data": report_data})
+
+        # REPORT 2: Stockout & Shortage
+        elif rep_type == "stockout":
+            where_clause = "WHERE stock <= min_level" 
+            if branch_id != "all":
+                where_clause += " AND branch_id = %s"
+                params.append(int(branch_id))
+                
+            cur.execute(f"SELECT branch_id, name, unit, stock, min_level FROM inventory {where_clause} ORDER BY stock ASC", tuple(params))
+            rows = cur.fetchall()
+            columns = ["Branch", "Item Name", "Unit", "Current Stock", "Min Level", "Shortage Amount"]
+            
+            report_data = []
+            for r in rows:
+                b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
+                shortage = round(r['min_level'] - r['stock'], 2)
+                report_data.append([b_name, r['name'], r['unit'], round(r['stock'], 2), r['min_level'], shortage])
+            
+            return jsonify({"success": True, "title": "Stockout & Shortage Report", "columns": columns, "data": report_data})
+            
+        # REPORT 3: Customer Demand Forecast
+        elif rep_type == "demand_forecast":
+            where_clause = ""
+            if branch_id != "all":
+                where_clause = "WHERE r.branch_id = %s"
+                params.append(int(branch_id))
+                
+            query = f"""
+                SELECT r.start_date, r.end_date, r.branch_id, r.remarks, 
+                       SUM(d.customers) as total_customers
+                FROM prediction_runs r
+                LEFT JOIN prediction_daily d ON r.id = d.run_id
+                {where_clause}
+                GROUP BY r.id
+                ORDER BY r.id DESC
+            """
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+            columns = ["Branch", "Forecast Start", "Forecast End", "Total Predicted Customers", "Remarks"]
+            
+            report_data = []
+            for r in rows:
+                b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
+                customers = round(r['total_customers'] or 0)
+                report_data.append([b_name, r['start_date'], r['end_date'], customers, r['remarks'] or "Normal"])
+            
+            return jsonify({"success": True, "title": "Customer Demand Forecast History", "columns": columns, "data": report_data})
+
+        # REPORT 4: Inventory Consumption Forecast (Pivot Table Format)
+        elif rep_type == "consumption_forecast":
+            where_clause = "" 
+            if branch_id != "all":
+                where_clause = "WHERE r.branch_id = %s"
+                params.append(int(branch_id))
+                
+            query = f"""
+                SELECT r.id, r.start_date, r.end_date, r.branch_id, 
+                       i.ingredient, SUM(i.qty) as total_qty, i.unit
+                FROM prediction_runs r
+                JOIN prediction_daily d ON r.id = d.run_id
+                JOIN prediction_daily_items i ON d.id = i.daily_id
+                {where_clause}
+                GROUP BY r.id, i.ingredient, i.unit
+                ORDER BY r.id DESC
+            """
+            cur.execute(query, tuple(params))
+            rows = cur.fetchall()
+            
+            runs = {}
+            unique_ingredients = set()
+            
+            for r in rows:
+                run_id = r['id']
+                col_name = f"{r['ingredient']} ({r['unit']})"
+                unique_ingredients.add(col_name)
+                
+                if run_id not in runs:
+                    b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
+                    runs[run_id] = {
+                        "branch": b_name,
+                        "range": f"{r['start_date']} to {r['end_date']}",
+                        "items": {}
+                    }
+                
+                runs[run_id]["items"][col_name] = r['total_qty']
+            
+            sorted_ingredients = sorted(list(unique_ingredients))
+            columns = ["Branch", "Forecast Range"] + sorted_ingredients
+            
+            report_data = []
+            for run_id, run_data in runs.items():
+                row = [run_data["branch"], run_data["range"]]
+                
+                for ing in sorted_ingredients:
+                    qty = run_data["items"].get(ing, 0)
+                    row.append(round(qty, 2))
+                    
+                report_data.append(row)
+            
+            return jsonify({"success": True, "title": "Detailed Inventory Consumption Forecast", "columns": columns, "data": report_data})
+
+        # REPORT 5: Order Quantity Recommendation
+        elif rep_type == "order_recommendation":
+            where_clause = "WHERE stock <= min_level"
+            if branch_id != "all":
+                where_clause += " AND branch_id = %s"
+                params.append(int(branch_id))
+                
+            cur.execute(f"SELECT branch_id, name, unit, stock, min_level, max_level FROM inventory {where_clause} ORDER BY name", tuple(params))
+            rows = cur.fetchall()
+            columns = ["Branch", "Item Name", "Unit", "Current Stock", "Target Max", "Recommended Order Qty"]
+            
+            report_data = []
+            for r in rows:
+                b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
+                target = r['max_level'] if r['max_level'] > 0 else (r['min_level'] * 1.2)
+                suggested_order = max(0, target - r['stock'])
+                
+                report_data.append([b_name, r['name'], r['unit'], round(r['stock'], 2), round(target, 2), round(suggested_order, 2)])
+            
+            return jsonify({"success": True, "title": "Order Quantity Recommendations", "columns": columns, "data": report_data})
+
+        # REPORT 6: Reorder Point (ROP) Settings
+        elif rep_type == "rop_report":
+            where_clause = ""
+            if branch_id != "all":
+                where_clause = "WHERE branch_id = %s"
+                params.append(int(branch_id))
+                
+            cur.execute(f"SELECT branch_id, name, unit, stock, min_level, reorder_model FROM inventory {where_clause} ORDER BY name", tuple(params))
+            rows = cur.fetchall()
+            columns = ["Branch", "Item Name", "Unit", "Math Model", "Current Stock", "Reorder Point (Min)", "Status"]
+            
+            report_data = []
+            for r in rows:
+                b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
+                model_name = "NewsVendor (Daily)" if r['reorder_model'] == "newsvendor" else "Standard ROP"
+                status = "Reorder Now" if r['stock'] <= r['min_level'] else "Healthy"
+                
+                report_data.append([b_name, r['name'], r['unit'], model_name, round(r['stock'], 2), r['min_level'], status])
+            
+            return jsonify({"success": True, "title": "Reorder Point (ROP) Configuration", "columns": columns, "data": report_data})
+
+        # REPORT 7: Forecast vs Actual Performance (Customers & Ingredients)
+        elif rep_type == "forecast_vs_actual":
+            report_params = []
+            branch_filter_logs = ""
+            branch_filter_preds = ""
+            
+            if branch_id != "all":
+                branch_filter_logs = "WHERE dl.branch_id = %s"
+                branch_filter_preds = "WHERE pr.branch_id = %s"
+                report_params.append(int(branch_id))
+
+            query_act = f"""
+                SELECT dl.date, dl.customers, dli.ingredient, dli.qty
+                FROM daily_logs dl
+                LEFT JOIN daily_log_items dli ON dl.id = dli.log_id
+                {branch_filter_logs}
+            """
+            cur.execute(query_act, tuple(report_params)) 
+            actuals_raw = cur.fetchall()
+
+            query_pred = f"""
+                SELECT pd.date, pd.customers, pdi.ingredient, pdi.qty
+                FROM prediction_runs pr
+                JOIN prediction_daily pd ON pr.id = pd.run_id
+                LEFT JOIN prediction_daily_items pdi ON pd.id = pdi.daily_id
+                {branch_filter_preds}
+            """
+            cur.execute(query_pred, tuple(report_params))
+            preds_raw = cur.fetchall()
+
+            data_map = {}
+
+            for r in actuals_raw:
+                d = r['date']
+                if d not in data_map:
+                    data_map[d] = {'customers': {'act': 0, 'pred': 0}, 'items': {}}
+                
+                data_map[d]['customers']['act'] = r['customers']
+                
+                if r['ingredient']:
+                    ing = r['ingredient']
+                    if ing not in data_map[d]['items']:
+                        data_map[d]['items'][ing] = {'act': 0, 'pred': 0}
+                    data_map[d]['items'][ing]['act'] += r['qty']
+
+            pred_cust_temp = {}
+            pred_item_temp = {}
+            
+            for r in preds_raw:
+                d = r['date']
+                if d not in pred_cust_temp: pred_cust_temp[d] = []
+                pred_cust_temp[d].append(r['customers'])
+                
+                if r['ingredient']:
+                    ing = r['ingredient']
+                    if d not in pred_item_temp: pred_item_temp[d] = {}
+                    if ing not in pred_item_temp[d]: pred_item_temp[d][ing] = []
+                    pred_item_temp[d][ing].append(r['qty'])
+
+            for d, cust_list in pred_cust_temp.items():
+                if d not in data_map:
+                    data_map[d] = {'customers': {'act': 0, 'pred': 0}, 'items': {}}
+                data_map[d]['customers']['pred'] = sum(cust_list) / len(cust_list)
+                
+            for d, items in pred_item_temp.items():
+                if d not in data_map:
+                    data_map[d] = {'customers': {'act': 0, 'pred': 0}, 'items': {}}
+                for ing, qty_list in items.items():
+                    if ing not in data_map[d]['items']:
+                        data_map[d]['items'][ing] = {'act': 0, 'pred': 0}
+                    data_map[d]['items'][ing]['pred'] = sum(qty_list) / len(qty_list)
+
+            columns = ["Date", "Metric / Ingredient", "Predicted", "Actual", "Variance", "Status"]
+            report_data = []
+
+            for d in sorted(data_map.keys(), reverse=True)[:30]: 
+                day_data = data_map[d]
+                
+                c_act = day_data['customers']['act']
+                c_pred = day_data['customers']['pred']
+                if c_act > 0 or c_pred > 0:
+                    c_var = c_act - c_pred
+                    if c_var > 0: c_stat = f"Beat forecast by {round(c_var)}"
+                    elif c_var < 0: c_stat = f"Missed forecast by {round(abs(c_var))}"
+                    else: c_stat = "Exact Match"
+                    
+                    report_data.append([
+                        d, 
+                        "▶ TOTAL CUSTOMERS", 
+                        round(c_pred), 
+                        round(c_act), 
+                        round(c_var), 
+                        c_stat
+                    ])
+                
+                for ing, qties in sorted(day_data['items'].items()):
+                    i_act = qties['act']
+                    i_pred = qties['pred']
+                    if i_act > 0 or i_pred > 0:
+                        i_var = i_act - i_pred
+                        if i_var > 0: i_stat = f"Over-consumed by {round(i_var, 2)}"
+                        elif i_var < 0: i_stat = f"Under-consumed by {round(abs(i_var), 2)}"
+                        else: i_stat = "Exact Match"
+                        
+                        report_data.append([
+                            d, 
+                            f"  ↳ {ing}", 
+                            round(i_pred, 2), 
+                            round(i_act, 2), 
+                            round(i_var, 2), 
+                            i_stat
+                        ])
+
+            return jsonify({"success": True, "title": "Variance Report: Customers & Ingredients", "columns": columns, "data": report_data})
+
+        else:
+            return jsonify({"success": False, "error": "Invalid report type selected."}), 400
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500  
+
 # ==========================================
 # API Routes: Prediction & Forecasting
 # ==========================================
@@ -416,12 +731,12 @@ def save_prediction_to_db(result, start_date, end_date, branch_id, remarks):
         INSERT INTO prediction_runs (start_date, end_date, horizon_days, branch_id, remarks) 
         VALUES (%s, %s, %s, %s, %s) RETURNING id
     """, (start_date, end_date, len(daily), int(branch_id), remarks))
-    run_id = cur.fetchone()[0]
+    run_id = cur.fetchone()['id']
     
     for day in daily:
         cur.execute("INSERT INTO prediction_daily (run_id, date, customers) VALUES (%s, %s, %s) RETURNING id", 
                     (run_id, day["date"], float(day.get("customers", 0))))
-        daily_id = cur.fetchone()[0]
+        daily_id = cur.fetchone()['id']
         for ingredient, qty in day.get("ingredients", {}).items():
             unit = "L" if "juice" in ingredient.lower() else "kg"
             cur.execute("INSERT INTO prediction_daily_items (daily_id, ingredient, unit, qty) VALUES (%s, %s, %s, %s)", 
