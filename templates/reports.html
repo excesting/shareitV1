@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-file-contract text-primary"></i> System Reports</h2>
+    <button id="btnPrintReport" class="btn btn-secondary d-none" onclick="printOfficialReport()">
+        <i class="fas fa-print"></i> Print Report
+    </button>
+</div>
+
+<div class="card mb-4" id="reportControls">
+    <div class="card-header">
+        <h3 class="card-title">Report Parameters</h3>
+    </div>
+    <div class="p-3">
+        <form id="reportForm">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label>Report Type</label>
+                        <select class="form-control" id="repType" required>
+                            <option value="inventory_status">Inventory Status Report</option>
+                            <option value="stockout">Stockout & Shortage Report</option>
+                            <option value="demand_forecast">Customer Demand Forecast</option>
+                            <option value="consumption_forecast">Inventory Consumption Forecast</option>
+                            <option value="order_recommendation">Order Quantity Recommendation</option>
+                            <option value="rop_report">Reorder Point (ROP) Report</option>
+                            <option value="forecast_vs_actual">Forecast vs Actual Performance</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label>Branch</label>
+                        <select class="form-control" id="repBranch">
+                            {% if session.get('role') == 'admin' %}
+                                <option value="all">All Branches</option>
+                                <option value="0">Lipa (Main)</option>
+                                <option value="1">Malvar</option>
+                            {% else %}
+                                {% if session.get('branch_id') == 0 %}
+                                    <option value="0">Lipa (Main)</option>
+                                {% elif session.get('branch_id') == 1 %}
+                                    <option value="1">Malvar</option>
+                                {% endif %}
+                            {% endif %}
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label>Start Date (Optional)</label>
+                        <input type="date" class="form-control" id="repStartDate">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label>End Date (Optional)</label>
+                        <input type="date" class="form-control" id="repEndDate">
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-bolt"></i> Generate Report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card d-none" id="reportOutputCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h3 class="card-title" id="reportOutputTitle">Report Output</h3>
+        <span class="badge badge-info" id="reportTimestamp"></span>
+    </div>
+    <div class="p-3" style="overflow-x: auto;">
+        <table class="table" id="reportTable">
+            <thead id="reportHead"></thead>
+            <tbody id="reportBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function printOfficialReport() {
+    // 1. Grab only the HTML inside the report card
+    const reportTitle = document.getElementById('reportOutputTitle').innerText;
+    const reportTimestamp = document.getElementById('reportTimestamp').innerText;
+    const tableHead = document.getElementById('reportHead').innerHTML;
+    const tableBody = document.getElementById('reportBody').innerHTML;
+
+    // 2. Open a temporary, invisible window
+    const printWindow = window.open('', '_blank', 'height=800,width=1000');
+
+    // 3. Write a brand new, perfectly formatted HTML document just for the printer
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>${reportTitle}</title>
+            <style>
+                /* Official Print Styling */
+                body { 
+                    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; 
+                    padding: 40px; 
+                    color: #111827; 
+                }
+                .header { 
+                    text-align: center; 
+                    margin-bottom: 30px; 
+                    padding-bottom: 20px; 
+                    border-bottom: 2px solid #e5e7eb;
+                }
+                .header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px; }
+                .header h1 span { color: #dc2626; }
+                .header p { margin: 5px 0 0 0; color: #6b7280; font-size: 14px; }
+                
+                .report-meta {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 20px;
+                    font-weight: bold;
+                    font-size: 18px;
+                }
+                .timestamp { color: #64748b; font-size: 14px; font-weight: normal; }
+                
+                table { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin-top: 10px; 
+                }
+                th, td { 
+                    border: 1px solid #cbd5e1; 
+                    padding: 12px; 
+                    text-align: left; 
+                    font-size: 14px; 
+                }
+                th { 
+                    background-color: #f8fafc; 
+                    font-weight: bold; 
+                    color: #334155;
+                }
+                tr:nth-child(even) { background-color: #f8fafc; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>SHAREAT <span>PRIMA</span></h1>
+                <p>Official System Report Document</p>
+            </div>
+
+            <div class="report-meta">
+                <span>${reportTitle}</span>
+                <span class="timestamp">Generated: ${reportTimestamp}</span>
+            </div>
+
+            <table>
+                <thead>${tableHead}</thead>
+                <tbody>${tableBody}</tbody>
+            </table>
+        </body>
+        </html>
+    `);
+
+    // 4. Wait a split second for the browser to render it, then trigger the print dialog
+    printWindow.document.close();
+    printWindow.focus();
+    
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close(); // Closes the temporary window automatically
+    }, 250);
+}
+</script>
+{% endblock %}
