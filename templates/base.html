@@ -12,6 +12,24 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <style>
+        #toast-container { position: fixed; top: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 12px; }
+        .toast-card { display: flex; align-items: center; background: #ffffff; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); padding: 16px 20px; width: 320px; border-left: 6px solid; animation: slideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; position: relative; }
+        .toast-card.hide { animation: fadeOutRight 0.3s ease-in forwards; }
+        .toast-success { border-left-color: #10b981; }
+        .toast-success .toast-icon { color: #10b981; }
+        .toast-error { border-left-color: #ef4444; }
+        .toast-error .toast-icon { color: #ef4444; }
+        .toast-icon { font-size: 24px; margin-right: 16px; }
+        .toast-content { flex-grow: 1; }
+        .toast-title { font-weight: 700; color: #1f2937; font-size: 1rem; margin-bottom: 4px; }
+        .toast-message { color: #4b5563; font-size: 0.875rem; line-height: 1.4; }
+        .toast-close { background: none; border: none; color: #9ca3af; font-size: 20px; cursor: pointer; position: absolute; top: 10px; right: 12px; transition: color 0.2s; }
+        .toast-close:hover { color: #4b5563; }
+        @keyframes slideInRight { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+    </style>
+
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -37,7 +55,7 @@
                     </a>
                 </li>
                 <li>
-                    <a href="/inventory" class="nav-link">
+                    <a href="/inventory" class="nav-link {% if request.endpoint == 'inventory' %}active{% endif %}">
                         <i class="fas fa-box"></i> 
                         <span class="menu-text">Inventory</span>
                     </a>
@@ -55,6 +73,11 @@
                 <li>
                     <a href="/predict" class="nav-link {% if request.endpoint == 'predict_page' %}active{% endif %}">
                         <i class="fas fa-wand-magic-sparkles"></i> <span class="menu-text">Predictions</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/reports" class="nav-link {% if request.endpoint == 'reports_page' %}active{% endif %}">
+                        <i class="fas fa-file-contract"></i> <span class="menu-text">Reports</span>
                     </a>
                 </li>
             </ul>
@@ -153,7 +176,6 @@
         const mainSidebar = document.getElementById('mainSidebar');
         const mainWrapper = document.getElementById('mainWrapper');
 
-        // Check if the user previously collapsed the sidebar
         if (localStorage.getItem('sidebarCollapsed') === 'true') {
             mainSidebar.classList.add('collapsed');
             mainWrapper.classList.add('expanded');
@@ -163,7 +185,6 @@
             mainSidebar.classList.toggle('collapsed');
             mainWrapper.classList.toggle('expanded');
             
-            // Save their preference so it stays collapsed when they click other links
             const isCollapsed = mainSidebar.classList.contains('collapsed');
             localStorage.setItem('sidebarCollapsed', isCollapsed);
         });
@@ -220,7 +241,6 @@
                     }
                 });
         }
-        // Run on load to set the red badge immediately
         fetchLowStockAlerts();
 
         // --- 2. Profile Dropdown Logic ---
@@ -255,7 +275,6 @@
         const searchList = document.getElementById('searchList');
         let inventoryData = [];
 
-        // Fetch inventory data silently in the background when the page loads
         fetch('/api/inventory')
             .then(res => res.json())
             .then(data => {
@@ -264,22 +283,18 @@
                 }
             });
 
-        // Listen for typing in the search box
         searchInput.addEventListener('input', function() {
             const query = this.value.toLowerCase().trim();
             
-            // Hide dropdown if the search box is empty
             if (query.length === 0) {
                 searchResults.style.display = 'none';
                 return;
             }
 
-            // Filter the inventory array for matches
             const filteredItems = inventoryData.filter(item => 
                 item.name.toLowerCase().includes(query)
             );
 
-            // Build the results list
             searchList.innerHTML = '';
             
             if (filteredItems.length === 0) {
@@ -292,7 +307,6 @@
                     li.style.cursor = 'pointer';
                     li.style.fontSize = '0.875rem';
                     
-                    // Determine color based on stock health
                     const stockColor = item.stock <= item.min_level ? '#ef4444' : '#28a745';
                     const icon = item.stock <= item.min_level ? '<i class="fas fa-exclamation-triangle"></i>' : '<i class="fas fa-box"></i>';
                     
@@ -303,12 +317,10 @@
                         </div>
                     `;
                     
-                    // Make it clickable to go directly to the inventory management page
                     li.addEventListener('click', () => {
                         window.location.href = '/inventory';
                     });
                     
-                    // Add hover effect
                     li.addEventListener('mouseenter', () => li.style.backgroundColor = '#f8fafc');
                     li.addEventListener('mouseleave', () => li.style.backgroundColor = 'transparent');
                     
@@ -319,7 +331,6 @@
             searchResults.style.display = 'block';
         });
 
-        // Close search results if clicking anywhere else on the page
         document.addEventListener('click', function(e) {
             if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
                 searchResults.style.display = 'none';
