@@ -308,7 +308,7 @@ def delete_inventory(item_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ==========================================
-# API Routes: Daily Logs
+# API Routes: Daily Logs (WITH SMART INVENTORY DEDUCTIONS)
 # ==========================================
 @app.route('/api/daily-logs', methods=['GET'])
 @login_required
@@ -343,20 +343,38 @@ def save_daily_log():
         if session.get('role') != 'admin' and log_branch_id != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized branch action"}), 403
 
-        # Use RETURNING id for PostgreSQL instead of cur.lastrowid
+        # 1. Insert or update the main log entry
         cur.execute("""
             INSERT INTO daily_logs (date, branch_id, customers, remarks) VALUES (%s, %s, %s, %s)
             ON CONFLICT(date, branch_id) DO UPDATE SET customers=EXCLUDED.customers, remarks=EXCLUDED.remarks
             RETURNING id
         """, (data['date'], log_branch_id, float(data.get('customers', 0)), data.get('remarks', 'Normal')))
         
-        log_id = cur.fetchone()[0]
+        log_id = cur.fetchone()['id']
+        current_time = datetime.now().isoformat()
         
-        for ingredient, qty in data.get('items', {}).items():
+        # 2. Handle each ingredient smartly (Deducting from live inventory)
+        for ingredient, new_qty in data.get('items', {}).items():
+            new_qty = float(new_qty)
+            
+            cur.execute("SELECT qty FROM daily_log_items WHERE log_id = %s AND ingredient = %s", (log_id, ingredient))
+            old_row = cur.fetchone()
+            old_qty = old_row['qty'] if old_row else 0.0
+            
+            qty_difference = new_qty - old_qty
+            
             cur.execute("""
                 INSERT INTO daily_log_items (log_id, ingredient, qty) VALUES (%s, %s, %s)
                 ON CONFLICT(log_id, ingredient) DO UPDATE SET qty=EXCLUDED.qty
-            """, (log_id, ingredient, float(qty)))
+            """, (log_id, ingredient, new_qty))
+            
+            if qty_difference != 0:
+                cur.execute("""
+                    UPDATE inventory 
+                    SET stock = stock - %s, updated_at = %s
+                    WHERE name = %s AND branch_id = %s
+                """, (qty_difference, current_time, ingredient, log_branch_id))
+                
         db.commit()
         return jsonify({"success": True, "log_id": log_id}), 200
     except Exception as e:
@@ -370,14 +388,31 @@ def delete_single_daily_log(log_id):
         cur = db.cursor()
         
         # Security Check: Ensure Managers can only delete logs from their own branch
-        if session.get('role') != 'admin':
-            cur.execute("SELECT branch_id FROM daily_logs WHERE id = %s", (log_id,))
-            log = cur.fetchone()
-            if not log or log['branch_id'] != session.get('branch_id'):
-                return jsonify({"success": False, "error": "Unauthorized"}), 403
+        cur.execute("SELECT branch_id FROM daily_logs WHERE id = %s", (log_id,))
+        log = cur.fetchone()
+        
+        if not log:
+            return jsonify({"success": False, "error": "Log not found."}), 404
+            
+        if session.get('role') != 'admin' and log['branch_id'] != session.get('branch_id'):
+            return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-        # Execute the delete command
+        # 1. Refund the inventory and timestamp the return before deleting the log
+        cur.execute("SELECT ingredient, qty FROM daily_log_items WHERE log_id = %s", (log_id,))
+        items = cur.fetchall()
+        
+        current_time = datetime.now().isoformat()
+        for item in items:
+            cur.execute("""
+                UPDATE inventory 
+                SET stock = stock + %s, updated_at = %s
+                WHERE name = %s AND branch_id = %s
+            """, (item['qty'], current_time, item['ingredient'], log['branch_id']))
+
+        # 2. For PostgreSQL, we can explicitly delete the child items first (though cascade works too)
+        cur.execute("DELETE FROM daily_log_items WHERE log_id = %s", (log_id,))
         cur.execute("DELETE FROM daily_logs WHERE id = %s", (log_id,))
+        
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
@@ -388,14 +423,12 @@ def delete_single_daily_log(log_id):
 @login_required
 def clear_all_daily_logs():
     try:
-        # Security Check: Only the Admin should be allowed to nuke the entire database
         if session.get('role') != 'admin':
             return jsonify({"success": False, "error": "Unauthorized. Only admins can clear all logs."}), 403
 
         db = get_db()
         cur = db.cursor()
         
-        # Execute the delete command on the whole table
         cur.execute("DELETE FROM daily_logs")
         db.commit()
         
@@ -487,7 +520,7 @@ def generate_report():
                 FROM prediction_runs r
                 LEFT JOIN prediction_daily d ON r.id = d.run_id
                 {where_clause}
-                GROUP BY r.id
+                GROUP BY r.id, r.start_date, r.end_date, r.branch_id, r.remarks
                 ORDER BY r.id DESC
             """
             cur.execute(query, tuple(params))
@@ -516,7 +549,7 @@ def generate_report():
                 JOIN prediction_daily d ON r.id = d.run_id
                 JOIN prediction_daily_items i ON d.id = i.daily_id
                 {where_clause}
-                GROUP BY r.id, i.ingredient, i.unit
+                GROUP BY r.id, r.start_date, r.end_date, r.branch_id, i.ingredient, i.unit
                 ORDER BY r.id DESC
             """
             cur.execute(query, tuple(params))
@@ -867,13 +900,13 @@ def get_prediction_history():
                 SELECT r.id, r.start_date, r.end_date, r.branch_id, r.remarks, COALESCE(SUM(d.customers), 0) as total_customers
                 FROM prediction_runs r LEFT JOIN prediction_daily d ON r.id = d.run_id 
                 WHERE r.branch_id = %s
-                GROUP BY r.id ORDER BY r.id DESC LIMIT 50
+                GROUP BY r.id, r.start_date, r.end_date, r.branch_id, r.remarks ORDER BY r.id DESC LIMIT 50
             """, (branch_id,))
         else:
             cur.execute("""
                 SELECT r.id, r.start_date, r.end_date, r.branch_id, r.remarks, COALESCE(SUM(d.customers), 0) as total_customers
                 FROM prediction_runs r LEFT JOIN prediction_daily d ON r.id = d.run_id 
-                GROUP BY r.id ORDER BY r.id DESC LIMIT 50
+                GROUP BY r.id, r.start_date, r.end_date, r.branch_id, r.remarks ORDER BY r.id DESC LIMIT 50
             """)
             
         runs = [dict(row) for row in cur.fetchall()]
@@ -890,5 +923,6 @@ def get_prediction_history():
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
-    # You generally don't use this block in production, Gunicorn bypasses it
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Use the port environment variable required by Railway, defaulting to 5000 for local testing
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
