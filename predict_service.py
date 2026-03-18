@@ -12,6 +12,12 @@ ingredients_model = joblib.load(ING_MODEL_PATH)
 meta = joblib.load(META_PATH)
 TARGET_COLS = meta.get("target_cols", [])
 
+# The exact 11 features your Colab script trained on
+BASE_FEATURES = [
+    "Branch_ID", "Is_Weekend", "Event_Code", "Cust_Lag_1", "Cust_Lag_7",
+    "Day_Sin", "Day_Cos", "Month_Sin", "Month_Cos", "Cust_Roll_3", "Cust_Roll_7"
+]
+
 branch_cust_models = {}
 
 def get_customer_model(branch_id):
@@ -23,12 +29,10 @@ def get_customer_model(branch_id):
         branch_cust_models[bid] = joblib.load(model_path)
     return branch_cust_models[bid]
 
-def get_automated_event(d: datetime, user_remarks: str) -> int:
-    if (d.month == 12 and d.day >= 24) or (d.month == 1 and d.day <= 2): return 1
-    if d.month == 2 and d.day == 14: return 1
-    x = str(user_remarks).lower()
-    if "holiday" in x: return 1
-    if "fiesta" in x or "event" in x: return 2
+def encode_event(remarks: str) -> int:
+    x = str(remarks).lower()
+    if any(word in x for word in ["holiday", "christmas", "new year"]): return 1
+    if any(word in x for word in ["fiesta", "event"]): return 2
     if "promo" in x: return 3
     return 0
 
@@ -37,33 +41,57 @@ def predict_all(date_str, branch_id, cust_lag_1=0, cust_lag_7=0, remarks="Normal
     branch_val = int(branch_id)
     cust_model = get_customer_model(branch_val)
     
-    # 1. Prepare 7 Features to match the new Colab model
-    event_val = get_automated_event(d, remarks)
-    dow = d.dayofweek
-    is_weekend = 1 if dow >= 5 else 0
+    # --- 1. FEATURE ENGINEERING (Matching Colab Exactly) ---
+    event_val = encode_event(remarks)
     
-    # NEW: The list now contains 7 features
+    day_of_week = d.dayofweek
+    month_num = d.month
+    is_weekend = 1 if day_of_week >= 5 else 0
+    
+    # A. Cyclical Features (Trigonometry for repeating time patterns)
+    day_sin = np.sin(2 * np.pi * day_of_week / 7)
+    day_cos = np.cos(2 * np.pi * day_of_week / 7)
+    month_sin = np.sin(2 * np.pi * (month_num - 1) / 12)
+    month_cos = np.cos(2 * np.pi * (month_num - 1) / 12)
+    
+    # B. Lags and Rolling Averages
+    c_lag_1 = float(cust_lag_1)
+    c_lag_7 = float(cust_lag_7)
+    
+    # Safe approximation for rolling averages so we don't have to rewrite app.py
+    cust_roll_3 = c_lag_1  
+    cust_roll_7 = (c_lag_1 + c_lag_7) / 2.0 if (c_lag_1 > 0 and c_lag_7 > 0) else c_lag_1
+
+    # C. Build the exact 11-item array the model is begging for
     features = [[
-        branch_val, d.month, dow, is_weekend, event_val, 
-        float(cust_lag_1), float(cust_lag_7)
+        branch_val, 
+        is_weekend, 
+        event_val, 
+        c_lag_1, 
+        c_lag_7,
+        day_sin, 
+        day_cos, 
+        month_sin, 
+        month_cos, 
+        cust_roll_3, 
+        cust_roll_7
     ]]
     
-    cols = ["Branch_ID", "Month_Num", "DayOfWeek_Num", "Is_Weekend", "Event_Code", "Cust_Lag_1", "Cust_Lag_7"]
-    df_cust = pd.DataFrame(features, columns=cols)
-
-    # 2. Predict Customers
+    # --- 2. PREDICT CUSTOMERS ---
+    df_cust = pd.DataFrame(features, columns=BASE_FEATURES)
     pred_customers = float(cust_model.predict(df_cust)[0])
     pred_customers = max(0.0, round(pred_customers))
 
-    # 3. Predict Ingredients (8 features: Customers + 7 base features)
-    df_ing = pd.DataFrame([[pred_customers] + features[0]], columns=["Customers"] + cols)
+    # --- 3. PREDICT INGREDIENTS (Customers + 11 base features) ---
+    ing_cols = ["Customers"] + BASE_FEATURES
+    df_ing = pd.DataFrame([[pred_customers] + features[0]], columns=ing_cols)
     
     preds = ingredients_model.predict(df_ing)
     if getattr(preds, "ndim", 1) > 1:
         preds = preds[0]
     preds = np.maximum(0.0, preds)
 
-    # 4. Map to target names
+    # --- 4. MAP TO TARGET NAMES ---
     ingredients = {}
     for i, col_name in enumerate(TARGET_COLS):
         if i < len(preds):
