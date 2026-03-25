@@ -3,6 +3,7 @@ import pandas as pd
 import joblib
 from datetime import datetime
 import os
+import re  # <-- ADDED REGEX LIBRARY HERE
 
 # Paths to artifacts
 ING_MODEL_PATH = "artifacts/ingredients_model.pkl"
@@ -91,11 +92,22 @@ def predict_all(date_str, branch_id, cust_lag_1=0, cust_lag_7=0, remarks="Normal
         preds = preds[0]
     preds = np.maximum(0.0, preds)
 
-    # --- 4. MAP TO TARGET NAMES ---
+# --- 4. MAP TO TARGET NAMES ---
     ingredients = {}
     for i, col_name in enumerate(TARGET_COLS):
         if i < len(preds):
-            ingredients[str(col_name)] = float(preds[i])
+            clean_name = str(col_name)
+            
+            # 1. First, fix the tricky Excel formatting (e.g. "Rice (uncooked, kg)" -> "Rice (uncooked)")
+            clean_name = clean_name.replace(", kg)", ")").replace(", L)", ")").replace(", mL)", ")")
+            
+            # 2. Then, strip off any normal trailing units (e.g. "Pork (kg)" -> "Pork")
+            clean_name = re.sub(r'\s*\((kg|L|mL|pcs)\)$', '', clean_name, flags=re.IGNORECASE)
+            
+            # 3. Clean up any extra spaces
+            clean_name = clean_name.strip()
+            
+            ingredients[clean_name] = float(preds[i])
 
     return {
         "customers_pred": int(pred_customers),
