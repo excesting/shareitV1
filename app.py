@@ -435,7 +435,52 @@ def clear_all_daily_logs():
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+        
+#==========================================
+# Delete the Prediction Runs (Admin Only)
+#==========================================
 
+@app.route('/api/prediction-history/<int:id>', methods=['DELETE'])
+@login_required
+def delete_prediction_history(id):
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        # Security: Ensure branch managers only delete their own forecasts
+        if session.get('role') != 'admin':
+            cur.execute("SELECT branch_id FROM prediction_runs WHERE id = ?", (id,))
+            run = cur.fetchone()
+            if run and run['branch_id'] != session.get('branch_id'):
+                return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+        # PRAGMA foreign_keys = ON will automatically delete the daily items (Cascade)
+        cur.execute("DELETE FROM prediction_runs WHERE id = ?", (id,))
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/prediction-history/clear', methods=['DELETE'])
+@login_required
+def clear_prediction_history():
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        if session.get('role') != 'admin':
+            # Managers can only clear their own branch's history
+            branch_id = session.get('branch_id')
+            cur.execute("DELETE FROM prediction_runs WHERE branch_id = ?", (branch_id,))
+        else:
+            # Admins clear everything
+            cur.execute("DELETE FROM prediction_runs")
+            
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    
 # ==========================================
 # API Routes: REPORTS ENGINE
 # ==========================================
