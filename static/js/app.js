@@ -1,6 +1,6 @@
 /**
  * app.js (Complete, Optimized, API-Driven)
- * Features: AI Safety Stock, Branch-Aware Inventory, Multiple AI Math Models, Bulletproof Modals
+ * Features: AI Safety Stock, Branch-Aware Inventory, Multiple AI Math Models, Bulletproof Modals, Excel Export
  */
 
 class IMSApp {
@@ -27,7 +27,7 @@ class IMSApp {
     this.initDailyLogPage();
     this.initFoodPredictionPage();
     this.initFoodAnalyticsPage();
-    this.initReportsPage(); // <-- THIS IS THE MAGIC LINK!
+    this.initReportsPage(); 
   }
 
   // ==========================================
@@ -168,6 +168,14 @@ class IMSApp {
     this.inv.filter?.addEventListener("change", () => this.renderInventory());
     this.inv.btnRefreshReorder?.addEventListener("click", () => this.generateAIReorderRecommendations());
     
+    // --- AUTOMATIC RECALCULATION TRIGGERS ---
+    document.getElementById("rrServiceLevel")?.addEventListener("change", () => this.generateAIReorderRecommendations());
+    document.getElementById("rrHorizon")?.addEventListener("change", () => this.generateAIReorderRecommendations());
+    document.getElementById("rrLeadTime")?.addEventListener("change", () => this.generateAIReorderRecommendations());
+    document.getElementById("rrBranch")?.addEventListener("change", () => this.generateAIReorderRecommendations());
+    document.getElementById("rrItemFilter")?.addEventListener("change", () => this.generateAIReorderRecommendations());
+    // ----------------------------------------
+    
     this.inv.form?.addEventListener("submit", async (e) => {
       e.preventDefault();
       await this.upsertInventoryItemViaApi();
@@ -181,7 +189,8 @@ class IMSApp {
       { name: "Pork", unit: "kg" }, { name: "Chicken", unit: "kg" }, { name: "Beef", unit: "kg" },
       { name: "Lettuce", unit: "kg" }, { name: "Cucumber", unit: "kg" }, { name: "Kimchi", unit: "kg" },
       { name: "Mushroom", unit: "kg" }, { name: "Radish (pickled)", unit: "kg" },
-      { name: "Cheese (melted dip)", unit: "kg" }, { name: "Fish Cake (Eomuk)", unit: "kg" },
+      { name: "Cheese (melted cheese dip)", unit: "kg" }, // <-- FIXED NAME MATCH
+      { name: "Fish Cake (Eomuk)", unit: "kg" },
       { name: "Tteok-bokki (Rice cake)", unit: "kg" }, { name: "Sweet Potato", unit: "kg" },
       { name: "Potato", unit: "kg" }, { name: "Rice (uncooked)", unit: "kg" },
       { name: "Juice", unit: "L" }, { name: "Shrimp", unit: "kg" },
@@ -407,7 +416,8 @@ class IMSApp {
           let totalPred = 0;
           for (const day of predictedData.daily) {
             const matchKey = Object.keys(day.ingredients).find((k) => {
-              const cleanName = k.replace(/\(.*\)/g, '').trim().toLowerCase();
+              // PERMANENT FIX RESTORED: Only trims (kg), (L), (pcs) off the end so parentheses inside names survive
+              const cleanName = k.replace(/\s*\((kg|l|pcs)\)$/i, '').trim().toLowerCase();
               return cleanName === targetName;
             });
             
@@ -864,7 +874,8 @@ class IMSApp {
     this.fp.dailyCards.innerHTML = dailyRows.map((day) => {
       
       let ingredientsList = Object.entries(day.ingredients || {}).map(([rawName, qty]) => {
-        const cleanName = rawName.replace(/\(.*\)/g, '').trim();
+        // PERMANENT FIX RESTORED: Only trims (kg), (L), (pcs) off the end
+        const cleanName = rawName.replace(/\s*\((kg|l|pcs)\)$/i, '').trim();
         return { name: cleanName, qty: Number(qty) || 0 };
       });
 
@@ -1202,7 +1213,7 @@ class IMSApp {
   }
 
   // ==========================================
-  // 10. REPORTS ENGINE (NEW!)
+  // 10. REPORTS ENGINE (Excel Export Built-in)
   // ==========================================
   initReportsPage() {
     const form = document.getElementById("reportForm");
@@ -1219,8 +1230,19 @@ class IMSApp {
       timestamp: document.getElementById("reportTimestamp"),
       head: document.getElementById("reportHead"),
       body: document.getElementById("reportBody"),
-      btnPrint: document.getElementById("btnPrintReport")
+      btnPrint: document.getElementById("btnPrintReport"),
+      btnExport: document.getElementById("btnExportReport") // EXCEL EXPORT BUTTON
     };
+
+    // Print functionality
+    if (this.rep.btnPrint) {
+        this.rep.btnPrint.addEventListener("click", () => window.print());
+    }
+
+    // Export to Excel / CSV functionality
+    if (this.rep.btnExport) {
+        this.rep.btnExport.addEventListener("click", () => this.exportReportToCSV());
+    }
 
     this.rep.form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -1259,7 +1281,10 @@ class IMSApp {
       }
 
       this.rep.outputCard.classList.remove("d-none");
-      this.rep.btnPrint.classList.remove("d-none");
+      
+      if (this.rep.btnPrint) this.rep.btnPrint.classList.remove("d-none");
+      if (this.rep.btnExport) this.rep.btnExport.classList.remove("d-none"); // Show export button
+      
       this.showNotification("Report generated successfully.", "success");
 
     } catch (e) {
@@ -1267,6 +1292,52 @@ class IMSApp {
     } finally {
       this.hideLoading(this.rep.form);
     }
+  }
+
+  exportReportToCSV() {
+    if (!this.rep || !this.rep.head || !this.rep.body) return;
+
+    let csvContent = [];
+    
+    // 1. Grab headers
+    let headers = [];
+    this.rep.head.querySelectorAll("th").forEach(th => {
+        // Wrap in quotes to handle any commas safely
+        headers.push('"' + th.innerText.replace(/"/g, '""') + '"');
+    });
+    csvContent.push(headers.join(","));
+
+    // 2. Grab all row data
+    this.rep.body.querySelectorAll("tr").forEach(tr => {
+        let rowData = [];
+        tr.querySelectorAll("td").forEach(td => {
+            // Wrap in quotes to handle numbers with commas safely
+            rowData.push('"' + td.innerText.replace(/"/g, '""') + '"');
+        });
+        if (rowData.length > 0) csvContent.push(rowData.join(","));
+    });
+
+    // 3. Create the CSV Blob
+    const csvString = csvContent.join("\r\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    
+    // 4. Generate dynamic filename
+    const reportTypeSelect = this.rep.type;
+    const reportTypeName = reportTypeSelect.options[reportTypeSelect.selectedIndex].text.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `IMS_Report_${reportTypeName}_${timestamp}.csv`;
+
+    // 5. Trigger auto-download
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    this.showNotification("Excel CSV Downloaded Successfully!", "success");
   }
 
   // ==========================================
