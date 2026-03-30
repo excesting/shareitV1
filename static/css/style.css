@@ -461,3 +461,95 @@ body { font-family: var(--font-family); color: var(--gray-800); background: var(
     from { transform: translateX(0); opacity: 1; }
     to { transform: translateX(120%); opacity: 0; }
 }
+
+/* --- SLEEK CENTERED CONFIRM MODAL --- */
+.custom-confirm-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5); /* Dim the background slightly */
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.custom-confirm-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.custom-confirm-box {
+    background: #1f2937; /* Dark modern background */
+    color: #f9fafb;
+    border-radius: 12px;
+    padding: 24px;
+    width: 90%;
+    max-width: 380px; /* Keeps it small and elegant */
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+    transform: scale(0.95);
+    transition: transform 0.2s ease;
+    text-align: center;
+    border: 1px solid #374151;
+}
+
+.custom-confirm-overlay.show .custom-confirm-box {
+    transform: scale(1);
+}
+
+.custom-confirm-icon {
+    font-size: 2.5rem;
+    margin-bottom: 16px;
+}
+
+.custom-confirm-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #f9fafb;
+}
+
+.custom-confirm-message {
+    font-size: 0.875rem;
+    color: #d1d5db;
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+
+.custom-confirm-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.custom-confirm-actions button {
+    min-width: 100px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.custom-confirm-actions button:hover {
+    opacity: 0.9;
+}
+
+.btn-cancel-custom {
+    background: #374151;
+    color: white;
+}
+
+.btn-danger-custom {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-primary-custom {
+    background: #3b82f6;
+    color: white;
+}
