@@ -18,15 +18,11 @@
             <div class="row">
                 <div class="col-md-3">
                     <div class="form-group">
-                        <label>Report Type</label>
-                        <select class="form-control" id="repType" required>
+                        <label class="form-label">Report Type</label>
+                        <select id="repType" class="form-control" required>
+                            <option value="inventory_consumption">Inventory Consumption Report</option>
+                            <option value="inventory_waste">Inventory Waste Report</option>
                             <option value="inventory_status">Inventory Status Report</option>
-                            <option value="stockout">Stockout & Shortage Report</option>
-                            <option value="demand_forecast">Customer Demand Forecast</option>
-                            <option value="consumption_forecast">Inventory Consumption Forecast</option>
-                            <option value="order_recommendation">Order Quantity Recommendation</option>
-                            <option value="rop_report">Reorder Point (ROP) Report</option>
-                            <option value="forecast_vs_actual">Forecast vs Actual Performance</option>
                         </select>
                     </div>
                 </div>
