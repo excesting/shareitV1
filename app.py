@@ -120,6 +120,7 @@ def close_db(e=None):
     if db is not None:
         db.close()
 
+
 # ==========================================
 # Security & RBAC Decorators
 # ==========================================
@@ -138,10 +139,12 @@ def get_user_branch():
     """
     if session.get('role') == 'admin':
         branch_req = request.args.get('branch_id')
+        # If the frontend specifically asks for a branch, return it. Otherwise return None (All).
         if branch_req is not None and branch_req != 'all':
             return int(branch_req)
         return None
     else:
+        # Managers are securely locked to their own branch
         return int(session.get('branch_id', 0))
 
 # ==========================================
@@ -153,19 +156,18 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
         
-        with psycopg2.connect(DATABASE_URL) as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("SELECT * FROM users WHERE username = %s", (username,))
-                user = cur.fetchone()
-                
-                if user and check_password_hash(user['password_hash'], password):
-                    session['user_id'] = user['id']
-                    session['username'] = user['username']
-                    session['role'] = user['role']
-                    session['branch_id'] = user['branch_id']
-                    return redirect(url_for('home'))
-                else:
-                    flash('Invalid username or password. Please try again.')
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+            
+            if user and check_password_hash(user['password_hash'], password):
+                session['user_id'] = user['id']
+                session['username'] = user['username']
+                session['role'] = user['role']
+                session['branch_id'] = user['branch_id']
+                return redirect(url_for('home'))
+            else:
+                flash('Invalid username or password. Please try again.')
                 
     return render_template('login.html')
 
@@ -182,11 +184,12 @@ def logout():
 def home(): 
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         branch_id = get_user_branch()
         
+        # Admins see everything, Managers see only their branch
         if branch_id is not None:
-            cur.execute("SELECT name, stock, min_level, unit, branch_id FROM inventory WHERE branch_id = %s ORDER BY name ASC", (branch_id,))
+            cur.execute("SELECT name, stock, min_level, unit, branch_id FROM inventory WHERE branch_id = ? ORDER BY name ASC", (branch_id,))
         else:
             cur.execute("SELECT name, stock, min_level, unit, branch_id FROM inventory ORDER BY branch_id ASC, name ASC")
             
@@ -222,20 +225,21 @@ def get_dashboard_stats():
     branch_id = get_user_branch()
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         
         if branch_id is not None:
-            cur.execute("SELECT COUNT(*) as count FROM inventory WHERE branch_id = %s", (branch_id,))
+            cur.execute("SELECT COUNT(*) as count FROM inventory WHERE branch_id = ?", (branch_id,))
             total_products = cur.fetchone()['count']
-            cur.execute("SELECT COUNT(*) as count FROM inventory WHERE stock <= min_level AND stock > 0 AND branch_id = %s", (branch_id,))
+            cur.execute("SELECT COUNT(*) as count FROM inventory WHERE stock <= min_level AND stock > 0 AND branch_id = ?", (branch_id,))
             low_stock = cur.fetchone()['count']
-            cur.execute("SELECT COUNT(*) as count FROM inventory WHERE stock <= 0 AND branch_id = %s", (branch_id,))
+            cur.execute("SELECT COUNT(*) as count FROM inventory WHERE stock <= 0 AND branch_id = ?", (branch_id,))
             out_of_stock = cur.fetchone()['count']
-            cur.execute("SELECT COUNT(*) as count FROM daily_logs WHERE branch_id = %s", (branch_id,))
+            cur.execute("SELECT COUNT(*) as count FROM daily_logs WHERE branch_id = ?", (branch_id,))
             total_logs = cur.fetchone()['count']
-            cur.execute("SELECT COUNT(*) as count FROM prediction_runs WHERE branch_id = %s", (branch_id,))
+            cur.execute("SELECT COUNT(*) as count FROM prediction_runs WHERE branch_id = ?", (branch_id,))
             total_predictions = cur.fetchone()['count']
         else:
+            # Admin Global Stats
             cur.execute("SELECT COUNT(*) as count FROM inventory")
             total_products = cur.fetchone()['count']
             cur.execute("SELECT COUNT(*) as count FROM inventory WHERE stock <= min_level AND stock > 0")
@@ -269,9 +273,9 @@ def get_inventory():
     branch_id = get_user_branch()
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         if branch_id is not None:
-            cur.execute("SELECT * FROM inventory WHERE branch_id = %s ORDER BY name ASC", (branch_id,))
+            cur.execute("SELECT * FROM inventory WHERE branch_id = ? ORDER BY name ASC", (branch_id,))
         else:
             cur.execute("SELECT * FROM inventory ORDER BY branch_id ASC, name ASC")
             
@@ -288,13 +292,14 @@ def save_inventory():
         db = get_db()
         cur = db.cursor()
         
+        # Ensure managers cannot change the branch ID of an item
         item_branch_id = int(data.get('branch_id', session.get('branch_id')))
         if session.get('role') != 'admin' and item_branch_id != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized branch action"}), 403
 
         cur.execute("""
             INSERT INTO inventory (id, branch_id, name, unit, stock, min_level, max_level, reorder_model, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name, unit=excluded.unit, stock=excluded.stock, 
                 min_level=excluded.min_level, max_level=excluded.max_level, 
@@ -313,12 +318,12 @@ def save_inventory():
 @login_required
 def delete_inventory(item_id):
     try:
+        # Only admins can delete inventory items completely to prevent data corruption
         if session.get('role') != 'admin':
             return jsonify({"success": False, "error": "Only administrators can delete items."}), 403
             
         db = get_db()
-        cur = db.cursor()
-        cur.execute("DELETE FROM inventory WHERE id = %s", (item_id,))
+        db.execute("DELETE FROM inventory WHERE id = ?", (item_id,))
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
@@ -333,18 +338,19 @@ def get_daily_logs():
     branch_id = get_user_branch()
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         
         if branch_id is not None:
-            cur.execute("SELECT id, date, branch_id, customers, remarks FROM daily_logs WHERE branch_id = %s ORDER BY date DESC", (branch_id,))
+            cur.execute("SELECT id, date, branch_id, customers, remarks FROM daily_logs WHERE branch_id = ? ORDER BY date DESC", (branch_id,))
         else:
             cur.execute("SELECT id, date, branch_id, customers, remarks FROM daily_logs ORDER BY date DESC")
             
         logs = [dict(row) for row in cur.fetchall()]
         for log in logs:
-            cur.execute("SELECT ingredient, qty, waste FROM daily_log_items WHERE log_id = %s", (log['id'],))
+            cur.execute("SELECT ingredient, qty, waste FROM daily_log_items WHERE log_id = ?", (log['id'],))
             db_items = cur.fetchall()
             
+            # Separate the consumed qty and the waste qty into two dictionaries
             log['items'] = {row['ingredient']: row['qty'] for row in db_items if row['qty'] > 0}
             log['waste'] = {row['ingredient']: row['waste'] for row in db_items if row['waste'] > 0}
             
@@ -358,21 +364,23 @@ def save_daily_log():
     try:
         data = request.get_json()
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         
         log_branch_id = int(data.get('branch_id', session.get('branch_id')))
         if session.get('role') != 'admin' and log_branch_id != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized branch action"}), 403
 
+        # 1. Insert or update the main log entry
         cur.execute("""
-            INSERT INTO daily_logs (date, branch_id, customers, remarks) VALUES (%s, %s, %s, %s)
+            INSERT INTO daily_logs (date, branch_id, customers, remarks) VALUES (?, ?, ?, ?)
             ON CONFLICT(date, branch_id) DO UPDATE SET customers=excluded.customers, remarks=excluded.remarks
         """, (data['date'], log_branch_id, float(data.get('customers', 0)), data.get('remarks', 'Normal')))
         
-        cur.execute("SELECT id FROM daily_logs WHERE date=%s AND branch_id=%s", (data['date'], log_branch_id))
+        cur.execute("SELECT id FROM daily_logs WHERE date=? AND branch_id=?", (data['date'], log_branch_id))
         log_id = cur.fetchone()['id']
         current_time = datetime.now().isoformat()
         
+        # 2. Handle Items & Waste (Deducting ONLY 'Consumed' from live inventory)
         items_data = data.get('items', {})
         waste_data = data.get('waste', {})
         all_ingredients = set(items_data.keys()).union(set(waste_data.keys()))
@@ -381,28 +389,30 @@ def save_daily_log():
             new_qty = float(items_data.get(ingredient, 0))
             new_waste = float(waste_data.get(ingredient, 0))
             
-            cur.execute("SELECT qty, waste FROM daily_log_items WHERE log_id = %s AND ingredient = %s", (log_id, ingredient))
+            cur.execute("SELECT qty, waste FROM daily_log_items WHERE log_id = ? AND ingredient = ?", (log_id, ingredient))
             old_row = cur.fetchone()
             old_qty = old_row['qty'] if old_row else 0.0
             
+            # MATH FIX: Only calculate the difference in Consumed (qty) to deduct from inventory
+            # We explicitly ignore new_waste for the inventory deduction math!
             qty_difference = new_qty - old_qty
             
             cur.execute("""
-                INSERT INTO daily_log_items (log_id, ingredient, qty, waste) VALUES (%s, %s, %s, %s)
+                INSERT INTO daily_log_items (log_id, ingredient, qty, waste) VALUES (?, ?, ?, ?)
                 ON CONFLICT(log_id, ingredient) DO UPDATE SET qty=excluded.qty, waste=excluded.waste
             """, (log_id, ingredient, new_qty, new_waste))
             
+            # Deduct ONLY the consumed amount from the inventory table
             if qty_difference != 0:
                 cur.execute("""
                     UPDATE inventory 
-                    SET stock = stock - %s, updated_at = %s
-                    WHERE name = %s AND branch_id = %s
+                    SET stock = stock - ?, updated_at = ?
+                    WHERE name = ? AND branch_id = ?
                 """, (qty_difference, current_time, ingredient, log_branch_id))
                 
         db.commit()
         return jsonify({"success": True, "log_id": log_id}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/daily-logs/<int:log_id>', methods=['DELETE'])
@@ -410,73 +420,78 @@ def save_daily_log():
 def delete_single_daily_log(log_id):
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         
-        cur.execute("SELECT branch_id FROM daily_logs WHERE id = %s", (log_id,))
+        cur.execute("SELECT branch_id FROM daily_logs WHERE id = ?", (log_id,))
         log = cur.fetchone()
         
         if not log: return jsonify({"success": False, "error": "Log not found."}), 404
         if session.get('role') != 'admin' and log['branch_id'] != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-        cur.execute("SELECT ingredient, qty FROM daily_log_items WHERE log_id = %s", (log_id,))
+        # 1. Refund ONLY the consumed qty back to inventory
+        cur.execute("SELECT ingredient, qty FROM daily_log_items WHERE log_id = ?", (log_id,))
         items = cur.fetchall()
         
         current_time = datetime.now().isoformat()
         for item in items:
             cur.execute("""
                 UPDATE inventory 
-                SET stock = stock + %s, updated_at = %s
-                WHERE name = %s AND branch_id = %s
+                SET stock = stock + ?, updated_at = ?
+                WHERE name = ? AND branch_id = ?
             """, (item['qty'], current_time, item['ingredient'], log['branch_id']))
 
-        cur.execute("DELETE FROM daily_log_items WHERE log_id = %s", (log_id,))
-        cur.execute("DELETE FROM daily_logs WHERE id = %s", (log_id,))
+        cur.execute("DELETE FROM daily_log_items WHERE log_id = ?", (log_id,))
+        cur.execute("DELETE FROM daily_logs WHERE id = ?", (log_id,))
         
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
     
+#delete all logs (Admin Only)
 @app.route('/api/daily-logs/clear', methods=['DELETE'])
 @login_required
 def clear_all_daily_logs():
     try:
+        # Security Check: Only the Admin should be allowed to nuke the entire database
         if session.get('role') != 'admin':
             return jsonify({"success": False, "error": "Unauthorized. Only admins can clear all logs."}), 403
 
         db = get_db()
         cur = db.cursor()
+        
+        # Execute the delete command on the whole table
         cur.execute("DELETE FROM daily_logs")
         db.commit()
         
         return jsonify({"success": True}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
-
+    
 #==========================================
 # Delete the Prediction Runs (Admin Only)
 #==========================================
+
 @app.route('/api/prediction-history/<int:id>', methods=['DELETE'])
 @login_required
 def delete_prediction_history(id):
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         
+        # Security: Ensure branch managers only delete their own forecasts
         if session.get('role') != 'admin':
-            cur.execute("SELECT branch_id FROM prediction_runs WHERE id = %s", (id,))
+            cur.execute("SELECT branch_id FROM prediction_runs WHERE id = ?", (id,))
             run = cur.fetchone()
             if run and run['branch_id'] != session.get('branch_id'):
                 return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-        cur.execute("DELETE FROM prediction_runs WHERE id = %s", (id,))
+        # PRAGMA foreign_keys = ON will automatically delete the daily items (Cascade)
+        cur.execute("DELETE FROM prediction_runs WHERE id = ?", (id,))
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/prediction-history/clear', methods=['DELETE'])
@@ -487,15 +502,16 @@ def clear_prediction_history():
         cur = db.cursor()
         
         if session.get('role') != 'admin':
+            # Managers can only clear their own branch's history
             branch_id = session.get('branch_id')
-            cur.execute("DELETE FROM prediction_runs WHERE branch_id = %s", (branch_id,))
+            cur.execute("DELETE FROM prediction_runs WHERE branch_id = ?", (branch_id,))
         else:
+            # Admins clear everything
             cur.execute("DELETE FROM prediction_runs")
             
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
     
 # ==========================================
@@ -513,6 +529,7 @@ def generate_report():
     rep_type = data.get('type')
     requested_branch_id = data.get('branch_id')
     
+    # --- SECURITY OVERRIDE ---
     user_role = session.get('role')
     user_branch_id = session.get('branch_id')
     
@@ -520,16 +537,19 @@ def generate_report():
         branch_id = str(user_branch_id)
     else:
         branch_id = str(requested_branch_id)
+    # -------------------------
 
     db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    db.row_factory = sqlite3.Row 
+    cur = db.cursor()
     params = []
     
     try:
+        # REPORT 1: Inventory Status Report
         if rep_type == "inventory_status":
             branch_filter = ""
             if branch_id != "all":
-                branch_filter = "WHERE branch_id = %s"
+                branch_filter = "WHERE branch_id = ?"
                 params.append(int(branch_id))
                 
             cur.execute(f"SELECT branch_id, name, unit, stock, min_level, max_level FROM inventory {branch_filter} ORDER BY name", tuple(params))
@@ -547,12 +567,14 @@ def generate_report():
             
             return jsonify({"success": True, "title": "Inventory Status Report", "columns": columns, "data": report_data})
 
+        # REPORT 2: Inventory Consumption Report
         elif rep_type == "inventory_consumption":
             branch_filter = ""
             if branch_id != "all":
-                branch_filter = "AND dl.branch_id = %s"
+                branch_filter = "AND dl.branch_id = ?"
                 params.append(int(branch_id))
 
+            # Fetch date, branch, customers, ingredients, and consumed qty (ignoring 0 consumption)
             query = f"""
                 SELECT dl.date, dl.branch_id, dl.customers, dli.ingredient, dli.qty, i.unit
                 FROM daily_logs dl
@@ -572,12 +594,14 @@ def generate_report():
 
             return jsonify({"success": True, "title": "Inventory Consumption Report", "columns": columns, "data": report_data})
 
+        # REPORT 3: Inventory Waste Report
         elif rep_type == "inventory_waste":
             branch_filter = ""
             if branch_id != "all":
-                branch_filter = "AND dl.branch_id = %s"
+                branch_filter = "AND dl.branch_id = ?"
                 params.append(int(branch_id))
 
+            # Fetch date, branch, ingredients, and waste qty (ignoring 0 waste)
             query = f"""
                 SELECT dl.date, dl.branch_id, dli.ingredient, dli.waste, i.unit
                 FROM daily_logs dl
@@ -610,21 +634,18 @@ def save_prediction_to_db(result, start_date, end_date, branch_id, remarks):
     db = get_db()
     daily = result.get("daily", [])
     cur = db.cursor()
-    # PostgreSQL uses RETURNING id to get the last inserted row
     cur.execute("""
         INSERT INTO prediction_runs (start_date, end_date, horizon_days, branch_id, remarks) 
-        VALUES (%s, %s, %s, %s, %s) RETURNING id
+        VALUES (?, ?, ?, ?, ?)
     """, (start_date, end_date, len(daily), int(branch_id), remarks))
-    run_id = cur.fetchone()[0]
-    
+    run_id = cur.lastrowid
     for day in daily:
-        cur.execute("INSERT INTO prediction_daily (run_id, date, customers) VALUES (%s, %s, %s) RETURNING id", 
+        cur.execute("INSERT INTO prediction_daily (run_id, date, customers) VALUES (?, ?, ?)", 
                     (run_id, day["date"], float(day.get("customers", 0))))
-        daily_id = cur.fetchone()[0]
-        
+        daily_id = cur.lastrowid
         for ingredient, qty in day.get("ingredients", {}).items():
             unit = "L" if "juice" in ingredient.lower() else "kg"
-            cur.execute("INSERT INTO prediction_daily_items (daily_id, ingredient, unit, qty) VALUES (%s, %s, %s, %s)", 
+            cur.execute("INSERT INTO prediction_daily_items (daily_id, ingredient, unit, qty) VALUES (?, ?, ?, ?)", 
                         (daily_id, ingredient, unit, float(qty or 0)))
     db.commit()
     return run_id
@@ -637,6 +658,7 @@ def api_predict_range():
     end_date = data.get("end_date")
     remarks = data.get("remarks", "Normal")
     
+    # Force branch ID based on the logged-in user
     if session.get('role') == 'admin':
         branch_id = int(data.get("branch_id", session.get('branch_id', 0)))
     else:
@@ -647,7 +669,7 @@ def api_predict_range():
         
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         sd = datetime.strptime(start_date, "%Y-%m-%d").date()
         ed = datetime.strptime(end_date, "%Y-%m-%d").date()
         
@@ -662,9 +684,8 @@ def api_predict_range():
             last_week = (cur_date - timedelta(days=7)).strftime("%Y-%m-%d")
             
             def get_hist(target_date):
-                cur.execute("SELECT customers FROM daily_logs WHERE date=%s AND branch_id=%s", 
-                                (target_date, branch_id))
-                row = cur.fetchone()
+                row = db.execute("SELECT customers FROM daily_logs WHERE date=? AND branch_id=?", 
+                                (target_date, branch_id)).fetchone()
                 return float(row['customers']) if row else 0
 
             lag1 = last_day_customers if last_day_customers > 0 else get_hist(yesterday)
@@ -700,15 +721,15 @@ def api_predict_range():
 def get_latest_prediction():
     branch_id = get_user_branch()
     if branch_id is None:
-        branch_id = 0
+        branch_id = 0 # Default to 0 if an admin searches generically
         
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         
         cur.execute("""
             SELECT id, start_date, end_date FROM prediction_runs 
-            WHERE branch_id = %s ORDER BY id DESC LIMIT 1
+            WHERE branch_id = ? ORDER BY id DESC LIMIT 1
         """, (branch_id,))
         run = cur.fetchone()
         
@@ -716,13 +737,13 @@ def get_latest_prediction():
             return jsonify({"success": False, "error": "No predictions found"}), 404
             
         run_id = run['id']
-        cur.execute("SELECT id, date, customers FROM prediction_daily WHERE run_id = %s", (run_id,))
+        cur.execute("SELECT id, date, customers FROM prediction_daily WHERE run_id = ?", (run_id,))
         days = cur.fetchall()
         
         daily_data = []
         for day in days:
             daily_id = day['id']
-            cur.execute("SELECT ingredient, qty FROM prediction_daily_items WHERE daily_id = %s", (daily_id,))
+            cur.execute("SELECT ingredient, qty FROM prediction_daily_items WHERE daily_id = ?", (daily_id,))
             items = cur.fetchall()
             
             ingredients = {item['ingredient']: item['qty'] for item in items}
@@ -747,13 +768,13 @@ def get_prediction_history():
     branch_id = get_user_branch()
     try:
         db = get_db()
-        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = db.cursor()
         
         if branch_id is not None:
             cur.execute("""
                 SELECT r.id, r.start_date, r.end_date, r.branch_id, r.remarks, COALESCE(SUM(d.customers), 0) as total_customers
                 FROM prediction_runs r LEFT JOIN prediction_daily d ON r.id = d.run_id 
-                WHERE r.branch_id = %s
+                WHERE r.branch_id = ?
                 GROUP BY r.id ORDER BY r.id DESC LIMIT 50
             """, (branch_id,))
         else:
@@ -768,7 +789,7 @@ def get_prediction_history():
             cur.execute("""
                 SELECT pdi.ingredient, pdi.unit, SUM(pdi.qty) as total_qty FROM prediction_daily_items pdi
                 JOIN prediction_daily pd ON pdi.daily_id = pd.id 
-                WHERE pd.run_id = %s GROUP BY pdi.ingredient, pdi.unit ORDER BY total_qty DESC LIMIT 3
+                WHERE pd.run_id = ? GROUP BY pdi.ingredient, pdi.unit ORDER BY total_qty DESC LIMIT 3
             """, (run['id'],))
             items = cur.fetchall()
             run['top_items'] = ", ".join([f"{i['ingredient']}: {i['total_qty']:.1f}{i['unit']}" for i in items]) if items else "-"
