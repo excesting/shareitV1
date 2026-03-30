@@ -23,60 +23,64 @@ def init_db():
     with psycopg2.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS prediction_runs (
-                    id SERIAL PRIMARY KEY,
-                    start_date TEXT,
-                    end_date TEXT,
-                    horizon_days INTEGER,
-                    branch_id INTEGER,
-                    remarks TEXT
-                );
-                CREATE TABLE IF NOT EXISTS prediction_daily (
-                    id SERIAL PRIMARY KEY,
-                    run_id INTEGER REFERENCES prediction_runs(id) ON DELETE CASCADE,
-                    date TEXT,
-                    customers REAL
-                );
-                CREATE TABLE IF NOT EXISTS prediction_daily_items (
-                    id SERIAL PRIMARY KEY,
-                    daily_id INTEGER REFERENCES prediction_daily(id) ON DELETE CASCADE,
-                    ingredient TEXT,
-                    unit TEXT,
-                    qty REAL
-                );
-                CREATE TABLE IF NOT EXISTS daily_logs (
-                    id SERIAL PRIMARY KEY,
-                    date TEXT NOT NULL,
-                    branch_id INTEGER NOT NULL,
-                    customers REAL NOT NULL DEFAULT 0,
-                    remarks TEXT,
-                    UNIQUE(date, branch_id)
-                );
-                CREATE TABLE IF NOT EXISTS daily_log_items (
-                    id SERIAL PRIMARY KEY,
-                    log_id INTEGER NOT NULL REFERENCES daily_logs(id) ON DELETE CASCADE,
-                    ingredient TEXT NOT NULL,
-                    qty REAL NOT NULL DEFAULT 0,
-                    UNIQUE(log_id, ingredient)
-                );
-                CREATE TABLE IF NOT EXISTS inventory (
-                    id TEXT PRIMARY KEY,
-                    branch_id INTEGER NOT NULL DEFAULT 0,
-                    name TEXT NOT NULL,
-                    unit TEXT NOT NULL,
-                    stock REAL NOT NULL DEFAULT 0,
-                    min_level REAL NOT NULL DEFAULT 0,
-                    max_level REAL NOT NULL DEFAULT 0,
-                    reorder_model TEXT NOT NULL DEFAULT 'rop',
-                    updated_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    branch_id INTEGER NOT NULL
-                );
+              CREATE TABLE IF NOT EXISTS prediction_runs (
+                id SERIAL PRIMARY KEY,
+                start_date TEXT,
+                end_date TEXT,
+                horizon_days INTEGER,
+                branch_id INTEGER,
+                remarks TEXT
+            );
+            CREATE TABLE IF NOT EXISTS prediction_daily (
+                id SERIAL PRIMARY KEY,
+                run_id INTEGER,
+                date TEXT,
+                customers REAL,
+                FOREIGN KEY(run_id) REFERENCES prediction_runs(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS prediction_daily_items (
+                id SERIAL PRIMARY KEY,
+                daily_id INTEGER,
+                ingredient TEXT,
+                unit TEXT,
+                qty REAL,
+                FOREIGN KEY(daily_id) REFERENCES prediction_daily(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS daily_logs (
+                id SERIAL PRIMARY KEY,
+                date TEXT NOT NULL,
+                branch_id INTEGER NOT NULL,
+                customers REAL NOT NULL DEFAULT 0,
+                remarks TEXT,
+                UNIQUE(date, branch_id)
+            );
+            CREATE TABLE IF NOT EXISTS daily_log_items (
+                id SERIAL PRIMARY KEY,
+                log_id INTEGER NOT NULL,
+                ingredient TEXT NOT NULL,
+                qty REAL NOT NULL DEFAULT 0,
+                waste REAL NOT NULL DEFAULT 0,  -- The new column!
+                FOREIGN KEY(log_id) REFERENCES daily_logs(id) ON DELETE CASCADE,
+                UNIQUE(log_id, ingredient)
+            );
+            CREATE TABLE IF NOT EXISTS inventory (
+                id TEXT PRIMARY KEY,
+                branch_id INTEGER NOT NULL DEFAULT 0,
+                name TEXT NOT NULL,
+                unit TEXT NOT NULL,
+                stock REAL NOT NULL DEFAULT 0,
+                min_level REAL NOT NULL DEFAULT 0,
+                max_level REAL NOT NULL DEFAULT 0,
+                reorder_model TEXT NOT NULL DEFAULT 'rop',
+                updated_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                branch_id INTEGER NOT NULL
+            );
             """)
             
             # Automatically create default accounts if none exist
