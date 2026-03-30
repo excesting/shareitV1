@@ -1,6 +1,6 @@
 /**
  * app.js (Complete, Optimized, API-Driven)
- * Features: AI Safety Stock, Branch-Aware Inventory, Multiple AI Math Models, Bulletproof Modals, Excel Export
+ * Features: Sleek Centered Modals, Waste Tracking, AI Safety Stock, Excel Export, Streamlined Reports
  */
 
 class IMSApp {
@@ -16,6 +16,7 @@ class IMSApp {
   async boot() {
     this.setupNavigation();
     this.setupAnimations();
+    this.setupCenteredConfirmModal(); // Installs the sleek popup
 
     // Fetch master data from SQLite FIRST so all pages can use it instantly
     await this.fetchInventoryFromDB();
@@ -28,6 +29,63 @@ class IMSApp {
     this.initFoodPredictionPage();
     this.initFoodAnalyticsPage();
     this.initReportsPage(); 
+  }
+
+  // ==========================================
+  // 1.5 SLEEK CENTERED CONFIRM MODAL (NEW)
+  // ==========================================
+  setupCenteredConfirmModal() {
+    const modalHtml = `
+    <div id="sleekConfirmOverlay" class="custom-confirm-overlay">
+        <div class="custom-confirm-box">
+            <div id="sleekConfirmIcon" class="custom-confirm-icon"></div>
+            <div id="sleekConfirmTitle" class="custom-confirm-title">Confirm</div>
+            <div id="sleekConfirmMessage" class="custom-confirm-message">Are you sure?</div>
+            <div class="custom-confirm-actions">
+                <button id="sleekCancelBtn" class="btn-cancel-custom">Cancel</button>
+                <button id="sleekConfirmBtn" class="btn-primary-custom">Confirm</button>
+            </div>
+        </div>
+    </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    this.confirmOverlay = document.getElementById("sleekConfirmOverlay");
+    this.confirmIcon = document.getElementById("sleekConfirmIcon");
+    this.confirmTitle = document.getElementById("sleekConfirmTitle");
+    this.confirmMessage = document.getElementById("sleekConfirmMessage");
+    this.confirmBtn = document.getElementById("sleekConfirmBtn");
+    this.cancelBtn = document.getElementById("sleekCancelBtn");
+
+    // Close on cancel or clicking outside the box
+    this.cancelBtn.addEventListener("click", () => this.closeConfirmModal());
+    this.confirmOverlay.addEventListener("click", (e) => {
+        if (e.target === this.confirmOverlay) this.closeConfirmModal();
+    });
+  }
+
+  confirmAction(iconHtml, title, message, btnText, btnClass, callback) {
+    this.confirmIcon.innerHTML = iconHtml;
+    this.confirmTitle.innerHTML = title;
+    this.confirmMessage.innerHTML = message;
+    this.confirmBtn.className = btnClass;
+    this.confirmBtn.innerHTML = btnText;
+
+    // Clone and replace to reset event listeners safely
+    const newBtn = this.confirmBtn.cloneNode(true);
+    this.confirmBtn.parentNode.replaceChild(newBtn, this.confirmBtn);
+    this.confirmBtn = newBtn;
+
+    this.confirmBtn.addEventListener("click", async () => {
+        this.closeConfirmModal();
+        await callback();
+    });
+
+    this.confirmOverlay.classList.add("show");
+  }
+
+  closeConfirmModal() {
+    this.confirmOverlay.classList.remove("show");
   }
 
   // ==========================================
@@ -163,7 +221,20 @@ class IMSApp {
     }
 
     this.inv.branchFilter?.addEventListener("change", () => this.renderInventory());
-    this.inv.btnReset?.addEventListener("click", () => this.resetInventoryToDatasetViaApi());
+    
+    if(this.inv.btnReset) {
+        this.inv.btnReset.addEventListener("click", (e) => {
+            this.confirmAction(
+                '<i class="fas fa-exclamation-triangle text-danger"></i>',
+                'Factory Reset Inventory',
+                "Are you sure you want to reset the inventory to the default dataset? All current stock levels will be wiped to 0.", 
+                "Yes, Reset", 
+                "btn-danger-custom", 
+                () => this.resetInventoryToDatasetViaApi()
+            );
+        });
+    }
+
     this.inv.search?.addEventListener("input", () => this.renderInventory());
     this.inv.filter?.addEventListener("change", () => this.renderInventory());
     this.inv.btnRefreshReorder?.addEventListener("click", () => this.generateAIReorderRecommendations());
@@ -178,7 +249,16 @@ class IMSApp {
     
     this.inv.form?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await this.upsertInventoryItemViaApi();
+      this.confirmAction(
+        '<i class="fas fa-save text-primary"></i>',
+        'Save Inventory Item',
+        "Are you sure you want to update this item's details and stock levels?",
+        "Save Item",
+        "btn-primary-custom",
+        async () => {
+          await this.upsertInventoryItemViaApi();
+        }
+      );
     });
 
     this.renderInventory();
@@ -189,7 +269,7 @@ class IMSApp {
       { name: "Pork", unit: "kg" }, { name: "Chicken", unit: "kg" }, { name: "Beef", unit: "kg" },
       { name: "Lettuce", unit: "kg" }, { name: "Cucumber", unit: "kg" }, { name: "Kimchi", unit: "kg" },
       { name: "Mushroom", unit: "kg" }, { name: "Radish (pickled)", unit: "kg" },
-      { name: "Cheese (melted cheese dip)", unit: "kg" }, // <-- FIXED NAME MATCH
+      { name: "Cheese (melted cheese dip)", unit: "kg" },
       { name: "Fish Cake (Eomuk)", unit: "kg" },
       { name: "Tteok-bokki (Rice cake)", unit: "kg" }, { name: "Sweet Potato", unit: "kg" },
       { name: "Potato", unit: "kg" }, { name: "Rice (uncooked)", unit: "kg" },
@@ -200,7 +280,6 @@ class IMSApp {
   }
 
   async resetInventoryToDatasetViaApi() {
-    if (!confirm("Reset inventory to default dataset? All current stock levels will be wiped to 0.")) return;
     const defaults = this.getDatasetDefaultIngredients().map((d) => ({
       id: this.makeId(), name: d.name, unit: d.unit, stock: 0, min: 0, max: 0, reorder_model: "rop"
     }));
@@ -277,18 +356,26 @@ class IMSApp {
     }
   }
 
-  async deleteInventoryItemViaApi(id) {
-    if (!confirm("Delete this inventory item?")) return;
-    try {
-      const res = await fetch(`/api/inventory/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      this.showNotification("Item removed.", "success");
-      await this.fetchInventoryFromDB(this.inv.branchFilter?.value || "all");
-      this.renderInventory();
-    } catch (e) {
-      this.showNotification("Failed to delete item.", "error");
-    }
+  deleteInventoryItemViaApi(id) {
+    this.confirmAction(
+        '<i class="fas fa-trash-alt text-danger"></i>',
+        'Delete Item',
+        "Are you sure you want to permanently delete this inventory item?",
+        "Delete",
+        "btn-danger-custom",
+        async () => {
+            try {
+              const res = await fetch(`/api/inventory/${id}`, { method: "DELETE" });
+              const data = await res.json();
+              if (!data.success) throw new Error(data.error);
+              this.showNotification("Item removed.", "success");
+              await this.fetchInventoryFromDB(this.inv.branchFilter?.value || "all");
+              this.renderInventory();
+            } catch (e) {
+              this.showNotification("Failed to delete item.", "error");
+            }
+        }
+    );
   }
 
   renderInventory() {
@@ -416,7 +503,6 @@ class IMSApp {
           let totalPred = 0;
           for (const day of predictedData.daily) {
             const matchKey = Object.keys(day.ingredients).find((k) => {
-              // PERMANENT FIX RESTORED: Only trims (kg), (L), (pcs) off the end so parentheses inside names survive
               const cleanName = k.replace(/\s*\((kg|l|pcs)\)$/i, '').trim().toLowerCase();
               return cleanName === targetName;
             });
@@ -579,10 +665,32 @@ class IMSApp {
     this.dl.date?.addEventListener("change", () => this.tryLoadDailyLog());
     this.dl.branch?.addEventListener("change", () => this.tryLoadDailyLog());
     this.dl.resetBtn?.addEventListener("click", () => this.resetDailyLogForm());
-    this.dl.clearAllBtn?.addEventListener("click", () => this.clearAllDailyLogsViaApi());
+    
+    if (this.dl.clearAllBtn) {
+        this.dl.clearAllBtn.addEventListener("click", () => {
+            this.confirmAction(
+                '<i class="fas fa-exclamation-circle text-danger"></i>',
+                'Clear Database',
+                "Are you sure you want to delete ALL daily logs? This action cannot be undone.",
+                "Delete All",
+                "btn-danger-custom",
+                () => this.clearAllDailyLogsViaApi()
+            );
+        });
+    }
+
     this.dl.form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await this.saveDailyLogViaApi();
+      this.confirmAction(
+        '<i class="fas fa-save text-primary"></i>',
+        'Save Daily Log',
+        "Are you sure you want to save this log?",
+        "Save Log",
+        "btn-primary-custom",
+        async () => {
+          await this.saveDailyLogViaApi();
+        }
+      );
     });
 
     this.renderDailyLogItemRows();
@@ -601,7 +709,8 @@ class IMSApp {
       <tr>
         <td><strong>${this.escapeHtml(x.key)}</strong></td>
         <td><span class="badge badge-success">${this.escapeHtml(x.unit)}</span></td>
-        <td><input type="number" class="form-control" data-dl-item="${this.escapeHtml(x.key)}" min="0" step="0.01" value="0" /></td>
+        <td><input type="number" class="form-control form-control-sm" data-dl-item="${this.escapeHtml(x.key)}" min="0" step="0.01" value="0" /></td>
+        <td><input type="number" class="form-control form-control-sm border-warning text-warning" data-dl-waste="${this.escapeHtml(x.key)}" min="0" step="0.01" value="0" /></td>
       </tr>
     `).join("");
   }
@@ -619,11 +728,15 @@ class IMSApp {
 
     this.dl.customers.value = existing.customers ?? 0;
     this.dl.remarks.value = existing.remarks ?? "Normal";
-    this.dl.itemsBody?.querySelectorAll("input").forEach(inp => {
-      const key = inp.getAttribute("data-dl-item");
-      inp.value = existing.items?.[key] ?? 0;
-    });
+    this.dl.itemsBody?.querySelectorAll("tr").forEach(tr => {
+      const qtyInp = tr.querySelector('input[data-dl-item]');
+      const wasteInp = tr.querySelector('input[data-dl-waste]');
+      if (!qtyInp) return;
 
+      const key = qtyInp.getAttribute("data-dl-item");
+      qtyInp.value = existing.items?.[key] ?? 0;
+      if (wasteInp) wasteInp.value = existing.waste?.[key] ?? 0;
+    });
   }
 
   async saveDailyLogViaApi() {
@@ -633,16 +746,26 @@ class IMSApp {
     const remarks = this.dl.remarks?.value || "Normal";
 
     const items = {};
-    this.dl.itemsBody?.querySelectorAll("input").forEach(inp => {
-      const val = Number(inp.value);
-      if (val > 0) items[inp.getAttribute("data-dl-item")] = val;
+    const waste = {};
+    
+    this.dl.itemsBody?.querySelectorAll("tr").forEach(tr => {
+      const qtyInp = tr.querySelector('input[data-dl-item]');
+      const wasteInp = tr.querySelector('input[data-dl-waste]');
+      if (qtyInp && wasteInp) {
+        const q = Number(qtyInp.value);
+        const w = Number(wasteInp.value);
+        const key = qtyInp.getAttribute("data-dl-item");
+        
+        if (q > 0) items[key] = q;
+        if (w > 0) waste[key] = w;
+      }
     });
 
     try {
       this.showLoading(this.dl.form);
       const res = await fetch("/api/daily-logs", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, branch_id: branchId, customers, remarks, items })
+        body: JSON.stringify({ date, branch_id: branchId, customers, remarks, items, waste })
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
@@ -657,22 +780,35 @@ class IMSApp {
     }
   }
 
-  async deleteDailyLogViaApi(id) {
-    if (!confirm("Delete this log from the database?")) return;
-    try {
-      await fetch(`/api/daily-logs/${id}`, { method: "DELETE" });
-      this.showNotification("Log deleted.", "success");
-      await this.fetchDailyLogsFromDB();
-      this.refreshDailyLogUI();
-    } catch (e) {
-      this.showNotification("Failed to delete log.", "error");
-    }
+  deleteDailyLogViaApi(id) {
+    this.confirmAction(
+        '<i class="fas fa-trash-alt text-danger"></i>',
+        'Delete Log',
+        "Are you sure you want to delete this log? The consumed quantities will be refunded back to your inventory stock.",
+        "Delete",
+        "btn-danger-custom",
+        async () => {
+            try {
+              const res = await fetch(`/api/daily-logs/${id}`, { method: "DELETE" });
+              const data = await res.json();
+              if(!data.success) throw new Error(data.error);
+              
+              this.showNotification("Log deleted.", "success");
+              await this.fetchDailyLogsFromDB();
+              this.refreshDailyLogUI();
+            } catch (e) {
+              this.showNotification("Failed to delete log.", "error");
+            }
+        }
+    );
   }
 
   async clearAllDailyLogsViaApi() {
-    if (!confirm("Clear ALL daily logs? This cannot be undone.")) return;
     try {
-      await fetch(`/api/daily-logs/clear`, { method: "DELETE" });
+      const res = await fetch(`/api/daily-logs/clear`, { method: "DELETE" });
+      const data = await res.json();
+      if(!data.success) throw new Error(data.error);
+      
       this.showNotification("Database logs cleared.", "success");
       await this.fetchDailyLogsFromDB();
       this.refreshDailyLogUI();
@@ -710,7 +846,9 @@ class IMSApp {
           <td><strong>${this.formatNumber(l.customers)}</strong></td>
           <td>${this.escapeHtml(l.remarks)}</td>
           <td>${this.escapeHtml(topText)}</td>
-          <td><button class="btn btn-xs btn-danger" onclick="window.app.deleteDailyLogViaApi(${l.id})"><i class="fas fa-trash"></i></button></td>
+          <td>
+            <button class="btn btn-xs btn-danger" onclick="window.app.deleteDailyLogViaApi(${l.id})"><i class="fas fa-trash"></i></button>
+          </td>
         </tr>`;
     }).join("");
   }
@@ -789,7 +927,20 @@ class IMSApp {
     this.fp.startDate?.addEventListener("change", () => this.updateDerivedPredictionFields());
     this.fp.horizon?.addEventListener("change", () => this.updateDerivedPredictionFields());
     this.fp.mode?.addEventListener("change", () => this.updatePredictionModeUI());
-    this.fp.btnClearHistory?.addEventListener("click", () => this.clearPredictionHistory());
+    
+    if(this.fp.btnClearHistory) {
+        this.fp.btnClearHistory.addEventListener("click", () => {
+             this.confirmAction(
+                '<i class="fas fa-exclamation-circle text-danger"></i>',
+                'Clear All Forecasts',
+                "Are you sure you want to clear ALL prediction history? This cannot be undone.",
+                "Clear History",
+                "btn-danger-custom",
+                () => this.clearPredictionHistory()
+             );
+        });
+    }
+    
     this.fp.form.addEventListener("submit", async (e) => {
       e.preventDefault();
       await this.runFoodForecastViaApi();
@@ -874,7 +1025,6 @@ class IMSApp {
     this.fp.dailyCards.innerHTML = dailyRows.map((day) => {
       
       let ingredientsList = Object.entries(day.ingredients || {}).map(([rawName, qty]) => {
-        // PERMANENT FIX RESTORED: Only trims (kg), (L), (pcs) off the end
         const cleanName = rawName.replace(/\s*\((kg|l|pcs)\)$/i, '').trim();
         return { name: cleanName, qty: Number(qty) || 0 };
       });
@@ -919,11 +1069,9 @@ class IMSApp {
   async fetchPredictionHistory() {
     if (!this.fp?.historyBody) return;
     
-    // FIX: Get the currently selected branch from the dropdown
     const branchId = this.fp.branch ? this.fp.branch.value : "0"; 
     
     try {
-      // FIX: Append the branch_id to the API call so admins only see the selected branch
       const res = await fetch(`/api/prediction-history?branch_id=${branchId}`);
       const data = await res.json();
       if (!data.success || !data.history.length) {
@@ -937,7 +1085,9 @@ class IMSApp {
           <td>${this.escapeHtml(e.remarks || "Normal")}</td>
           <td><strong>${this.formatNumber(e.total_customers)}</strong></td>
           <td>${this.escapeHtml(e.top_items || "-")}</td>
-          <td><button class="btn btn-xs btn-danger" onclick="window.app.deletePredictionHistoryEntry(${e.id})"><i class="fas fa-trash"></i></button></td>
+          <td>
+            <button class="btn btn-xs btn-danger" onclick="window.app.deletePredictionHistoryEntry(${e.id})"><i class="fas fa-trash"></i></button>
+          </td>
         </tr>
       `).join("");
     } catch (e) {
@@ -945,21 +1095,34 @@ class IMSApp {
     }
   }
 
-  async deletePredictionHistoryEntry(id) {
-    if (!confirm("Delete this prediction record from the database?")) return;
-    try {
-      await fetch(`/api/prediction-history/${id}`, { method: "DELETE" });
-      await this.fetchPredictionHistory();
-      this.showNotification("Record deleted from database.", "success");
-    } catch (e) {
-      this.showNotification("Failed to delete record.", "error");
-    }
+  deletePredictionHistoryEntry(id) {
+    this.confirmAction(
+        '<i class="fas fa-trash-alt text-danger"></i>',
+        'Delete Forecast',
+        "Are you sure you want to delete this forecast from the database?",
+        "Delete",
+        "btn-danger-custom",
+        async () => {
+            try {
+              const res = await fetch(`/api/prediction-history/${id}`, { method: "DELETE" });
+              const data = await res.json();
+              if(!data.success) throw new Error(data.error);
+              
+              await this.fetchPredictionHistory();
+              this.showNotification("Record deleted from database.", "success");
+            } catch (e) {
+              this.showNotification("Failed to delete record.", "error");
+            }
+        }
+    );
   }
 
   async clearPredictionHistory() {
-    if (!confirm("Clear ALL prediction history from the database?")) return;
     try {
-      await fetch(`/api/prediction-history/clear`, { method: "DELETE" });
+      const res = await fetch(`/api/prediction-history/clear`, { method: "DELETE" });
+      const data = await res.json();
+      if(!data.success) throw new Error(data.error);
+      
       await this.fetchPredictionHistory();
       this.showNotification("Database history cleared.", "success");
     } catch (e) {
@@ -1231,15 +1394,13 @@ class IMSApp {
       head: document.getElementById("reportHead"),
       body: document.getElementById("reportBody"),
       btnPrint: document.getElementById("btnPrintReport"),
-      btnExport: document.getElementById("btnExportReport") // EXCEL EXPORT BUTTON
+      btnExport: document.getElementById("btnExportReport") 
     };
 
-    // Print functionality
     if (this.rep.btnPrint) {
         this.rep.btnPrint.addEventListener("click", () => window.print());
     }
 
-    // Export to Excel / CSV functionality
     if (this.rep.btnExport) {
         this.rep.btnExport.addEventListener("click", () => this.exportReportToCSV());
     }
@@ -1268,7 +1429,6 @@ class IMSApp {
       
       if (!data.success) throw new Error(data.error);
 
-      // Render the Table
       this.rep.outputTitle.innerHTML = `<i class="fas fa-file-alt text-primary"></i> ${data.title}`;
       this.rep.timestamp.textContent = new Date().toLocaleString();
       
@@ -1283,7 +1443,7 @@ class IMSApp {
       this.rep.outputCard.classList.remove("d-none");
       
       if (this.rep.btnPrint) this.rep.btnPrint.classList.remove("d-none");
-      if (this.rep.btnExport) this.rep.btnExport.classList.remove("d-none"); // Show export button
+      if (this.rep.btnExport) this.rep.btnExport.classList.remove("d-none"); 
       
       this.showNotification("Report generated successfully.", "success");
 
@@ -1299,35 +1459,28 @@ class IMSApp {
 
     let csvContent = [];
     
-    // 1. Grab headers
     let headers = [];
     this.rep.head.querySelectorAll("th").forEach(th => {
-        // Wrap in quotes to handle any commas safely
         headers.push('"' + th.innerText.replace(/"/g, '""') + '"');
     });
     csvContent.push(headers.join(","));
 
-    // 2. Grab all row data
     this.rep.body.querySelectorAll("tr").forEach(tr => {
         let rowData = [];
         tr.querySelectorAll("td").forEach(td => {
-            // Wrap in quotes to handle numbers with commas safely
             rowData.push('"' + td.innerText.replace(/"/g, '""') + '"');
         });
         if (rowData.length > 0) csvContent.push(rowData.join(","));
     });
 
-    // 3. Create the CSV Blob
     const csvString = csvContent.join("\r\n");
     const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
     
-    // 4. Generate dynamic filename
     const reportTypeSelect = this.rep.type;
     const reportTypeName = reportTypeSelect.options[reportTypeSelect.selectedIndex].text.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
     const timestamp = new Date().toISOString().slice(0, 10);
     const filename = `IMS_Report_${reportTypeName}_${timestamp}.csv`;
 
-    // 5. Trigger auto-download
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
