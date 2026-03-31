@@ -34,55 +34,56 @@
 </head>
 <body>
     <div class="app-container">
+        
         <aside class="sidebar" id="mainSidebar">
             <div class="sidebar-brand">
                 <div class="brand-logo" style="background: transparent; padding: 0;">
-                    <img src="{{ url_for('static', filename='images/shareat.jpg') }}" alt="Shareat Logo" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #e5e7eb;">
+                    <img src="{{ url_for('static', filename='images/shareat.jpg') }}" alt="Shareat Logo" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #2e2e2e;">
                 </div>
                 
                 <div class="menu-text">
                     <div style="display: flex; flex-direction: column; margin-left: 5px;">
-                        <span style="font-weight: 800; font-size: 1.15rem; color: #111827; line-height: 1;">SHAREAT</span>
-                        <span style="font-weight: 700; font-size: 0.7rem; color: #dc2626; letter-spacing: 1px; margin-top: 2px;">PRIMA</span>
+                        <span style="font-weight: 800; font-size: 1.15rem; color: #ffffff; line-height: 1;">SHAREAT</span>
+                        <span style="font-weight: 700; font-size: 0.7rem; color: #3ecf8e; letter-spacing: 1px; margin-top: 2px;">PRIMA</span>
                     </div>
                 </div>
             </div>
             
-            <ul class="sidebar-nav">
-                <li>
+            <div class="sidebar-group">
+                <div class="sidebar-heading">Dashboard</div>
+                <div class="sidebar-nav">
                     <a href="/" class="nav-link {% if request.endpoint == 'home' %}active{% endif %}">
-                        <i class="fas fa-border-all"></i> <span class="menu-text">Dashboard</span>
+                        <i class="fas fa-border-all"></i> <span class="menu-text">Overview</span>
                     </a>
-                </li>
-                <li>
+                </div>
+            </div>
+
+            <div class="sidebar-group">
+                <div class="sidebar-heading">Management</div>
+                <div class="sidebar-nav">
                     <a href="/inventory" class="nav-link {% if request.endpoint == 'inventory' %}active{% endif %}">
-                        <i class="fas fa-box"></i> 
-                        <span class="menu-text">Inventory</span>
+                        <i class="fas fa-box"></i> <span class="menu-text">Inventory</span>
                     </a>
-                </li>
-                <li>
-                    <a href="/analytics" class="nav-link {% if request.endpoint == 'sales_analytics' %}active{% endif %}">
-                        <i class="fas fa-chart-simple"></i> <span class="menu-text">Analytics</span>
-                    </a>
-                </li>
-                <li>
                     <a href="/daily-log" class="nav-link {% if request.endpoint == 'daily_log' %}active{% endif %}">
-                        <i class="fas fa-clipboard-list"></i> <span class="menu-text">Daily Log</span>
+                        <i class="fas fa-clipboard-list"></i> <span class="menu-text">Daily Logs</span>
                     </a>
-                </li>
-                <li>
+                </div>
+            </div>
+
+            <div class="sidebar-group">
+                <div class="sidebar-heading">Analytics & Reports</div>
+                <div class="sidebar-nav">
                     <a href="/predict" class="nav-link {% if request.endpoint == 'predict_page' %}active{% endif %}">
                         <i class="fas fa-wand-magic-sparkles"></i> <span class="menu-text">Predictions</span>
                     </a>
-                </li>
-                <li>
+                    <a href="/analytics" class="nav-link {% if request.endpoint == 'sales_analytics' %}active{% endif %}">
+                        <i class="fas fa-chart-simple"></i> <span class="menu-text">Food Analytics</span>
+                    </a>
                     <a href="/reports" class="nav-link {% if request.endpoint == 'reports_page' %}active{% endif %}">
                         <i class="fas fa-file-contract"></i> <span class="menu-text">Reports</span>
                     </a>
-                </li>
-            </ul>
-
-            
+                </div>
+            </div>
         </aside>
 
         <div class="main-wrapper" id="mainWrapper">
