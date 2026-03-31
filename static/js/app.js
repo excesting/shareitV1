@@ -93,8 +93,12 @@ class IMSApp {
   // ==========================================
   setupNavigation() {
     const currentPath = window.location.pathname;
-    document.querySelectorAll(".nav-link").forEach((link) => {
-      if (link.getAttribute("href") === currentPath) link.classList.add("active");
+    document.querySelectorAll(".sidebar-link").forEach((link) => {
+      if (link.getAttribute("href") === currentPath) {
+          link.classList.add("active");
+      } else {
+          link.classList.remove("active");
+      }
     });
   }
 
