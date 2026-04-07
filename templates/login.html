@@ -23,76 +23,90 @@
             background: white;
             padding: 40px;
             border-radius: 12px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
             width: 100%;
             max-width: 400px;
         }
         
-        /* NEW BRAND STYLING */
+        /* UPDATED BRAND STYLING: Centered and Stacked */
         .brand {
             display: flex;
+            flex-direction: column; /* Stacks items vertically */
             align-items: center;
             justify-content: center;
-            gap: 12px;
-            margin-bottom: 30px;
+            gap: 16px;
+            margin-bottom: 32px;
         }
         .brand img {
-            width: 50px; 
-            height: 50px; 
+            width: 110px; /* Made the logo much bigger */
+            height: 110px; 
             border-radius: 50%; 
             object-fit: cover; 
-            border: 1px solid #e5e7eb;
+            border: 3px solid #f1f5f9; /* Clean border */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); /* Soft shadow */
         }
         .brand-text {
             display: flex;
             flex-direction: column;
-            text-align: left;
+            text-align: center; /* Centers the text underneath */
+            align-items: center;
         }
         .brand-text .title {
             font-weight: 800;
-            font-size: 1.6rem;
+            font-size: 1.75rem;
             color: #111827;
             line-height: 1;
         }
         .brand-text .subtitle {
             font-weight: 700;
-            font-size: 0.85rem;
-            color: #dc2626;
-            letter-spacing: 1px;
-            margin-top: 2px;
+            font-size: 0.9rem;
+            color: #ef4444; /* Vivid Red */
+            letter-spacing: 2px;
+            margin-top: 4px;
         }
 
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: 500; color: #475569; font-size: 0.875rem;}
         input {
             width: 100%;
-            padding: 10px 12px;
+            padding: 12px 14px;
             border: 1px solid #cbd5e1;
             border-radius: 6px;
             box-sizing: border-box;
             font-family: inherit;
+            font-size: 0.95rem;
+            transition: all 0.2s;
         }
-        input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        
+        /* Updated to Red Theme Focus */
+        input:focus { outline: none; border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
+        
+        /* Updated Button to Red Theme */
         .btn-login {
             width: 100%;
             padding: 12px;
-            background: #3b82f6;
+            background: #ef4444; /* Primary Red */
             color: white;
             border: none;
             border-radius: 6px;
             font-weight: 600;
+            font-size: 1rem;
             cursor: pointer;
             transition: background 0.2s;
+            margin-top: 10px;
         }
-        .btn-login:hover { background: #2563eb; }
+        .btn-login:hover { background: #dc2626; /* Darker Red on hover */ }
+        
         .alert {
             background: #fee2e2;
             color: #ef4444;
-            padding: 10px;
+            padding: 12px;
             border-radius: 6px;
             margin-bottom: 20px;
             font-size: 0.875rem;
             text-align: center;
+            font-weight: 500;
+            border: 1px solid #fca5a5;
         }
     </style>
 </head>
@@ -110,20 +124,20 @@
         
         {% with messages = get_flashed_messages() %}
             {% if messages %}
-                <div class="alert">{{ messages[0] }}</div>
+                <div class="alert"><i class="fas fa-exclamation-circle"></i> {{ messages[0] }}</div>
             {% endif %}
         {% endwith %}
 
         <form method="POST" action="/login">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autocomplete="off">
+                <input type="text" id="username" name="username" required autocomplete="off" placeholder="Enter your username">
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" required placeholder="••••••••">
             </div>
-            <button type="submit" class="btn-login">Sign In to Dashboard</button>
+            <button type="submit" class="btn-login"><i class="fas fa-sign-in-alt"></i> Sign In</button>
         </form>
     </div>
 
