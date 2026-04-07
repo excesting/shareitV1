@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Inventory - Food Consumption{% endblock %}
+{% block title %}Inventory{% endblock %}
 {% block page_title %}Inventory{% endblock %}
 
 {% block content %}
+<div class="page-hero">
+    <p class="page-hero-subtitle">Manage your inventory levels, track stock status, and receive AI-driven reorder recommendations.</p>
+</div>
+
 <div class="grid grid-4 mb-6">
   <div class="stats-card"><div class="stats-number" id="invTotalItems">-</div><div class="stats-label">Total Items</div></div>
   <div class="stats-card"><div class="stats-number text-warning" id="invLowStock">-</div><div class="stats-label">Low Stock</div></div>
