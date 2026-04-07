@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - SHAREAT PRIMA{% endblock %}
+{% block page_title %}System Settings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <h1 class="page-hero-title">System Settings</h1>
+    <p class="page-hero-subtitle">Manage system users, branch access, and security credentials.</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-users-cog text-primary"></i> User Management</h2>
+    </div>
+    <div style="overflow-x: auto;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Branch Access</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td><strong>{{ u.username }}</strong></td>
+                    <td><span class="badge badge-neutral">{{ u.role|title }}</span></td>
+                    <td>
+                        {% if u.role == 'admin' %}
+                            <span class="badge badge-info">All Branches</span>
+                        {% elif u.branch_id == 1 %}
+                            <span class="badge" style="background-color: #64748b; color: white;">Malvar</span>
+                        {% else %}
+                            <span class="badge" style="background-color: #3b82f6; color: white;">Lipa</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right;">
+                        <button class="btn btn-xs btn-primary" onclick="openPasswordModal({{ u.id }}, '{{ u.username }}')">
+                            <i class="fas fa-key"></i> Reset Password
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="pwModal" class="modal-overlay d-none" style="z-index: 9999;">
+    <div class="modal-content" style="max-width: 400px; margin: 15vh auto;">
+        <div class="modal-header">
+            <h3 class="card-title">Reset Password</h3>
+            <button type="button" class="modal-close" onclick="closePasswordModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="text-muted mb-4">Enter a new secure password for <strong id="pwUsername" class="text-primary"></strong>.</p>
+            
+            <div class="form-group">
+                <label class="form-label">New Password</label>
+                <input type="password" id="newPassword" class="form-control" placeholder="••••••••" required>
+            </div>
+            
+            <div class="d-flex justify-end mt-4" style="gap: 10px;">
+                <button class="btn btn-secondary" onclick="closePasswordModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="submitPasswordReset()">Save Password</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let selectedUserId = null;
+
+function openPasswordModal(id, username) {
+    selectedUserId = id;
+    document.getElementById('pwUsername').textContent = username;
+    document.getElementById('newPassword').value = '';
+    
+    const modal = document.getElementById('pwModal');
+    modal.classList.remove('d-none');
+}
+
+function closePasswordModal() {
+    selectedUserId = null;
+    document.getElementById('pwModal').classList.add('d-none');
+}
+
+async function submitPasswordReset() {
+    const newPassword = document.getElementById('newPassword').value;
+    if (!newPassword) {
+        window.app.showNotification("Password cannot be empty.", "error");
+        return;
+    }
+
+    const modalContent = document.querySelector('#pwModal .modal-content');
+    window.app.showLoading(modalContent, "Updating...");
+    
+    try {
+        const res = await fetch('/api/users/reset-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: selectedUserId, new_password: newPassword })
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            window.app.showNotification("Password updated successfully!", "success");
+            closePasswordModal();
+        } else {
+            throw new Error(data.error);
+        }
+    } catch (e) {
+        window.app.showNotification(e.message, "error");
+    } finally {
+        window.app.hideLoading(modalContent);
+    }
+}
+</script>
+{% endblock %}
