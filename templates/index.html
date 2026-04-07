@@ -1,12 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - SHAREAT PRIMA{% endblock %}
-{% block page_title %}Dashboard{% endblock %}
+{% block title %}Overview{% endblock %}
+{% block page_title %}Overview{% endblock %}
 
 {% block content %}
 
 <div class="page-hero">
-    <h1 class="page-hero-title">Overview</h1>
     <p class="page-hero-subtitle">
         Monitor your live inventory levels, track daily consumption logs, and generate AI-driven forecasts.
     </p>
@@ -48,9 +47,9 @@
     <div class="card feature-card">
         <div class="feature-card-header">
             <div class="feature-icon-wrapper">
-                <i class="fas fa-boxes"></i>
+                <i class="fas fa-box"></i>
             </div>
-            <h3 class="feature-title">Inventory Management</h3>
+            <h3 class="feature-title">Inventory</h3>
         </div>
         <p class="feature-desc">
             Track live stock levels, monitor minimums, and organize raw materials efficiently.
@@ -61,9 +60,9 @@
     <div class="card feature-card">
         <div class="feature-card-header">
             <div class="feature-icon-wrapper success">
-                <i class="fas fa-chart-bar"></i>
+                <i class="fas fa-chart-simple"></i>
             </div>
-            <h3 class="feature-title">Consumption Analytics</h3>
+            <h3 class="feature-title">Analytics</h3>
         </div>
         <p class="feature-desc">
             Analyze historical trends and identify your top-consumed ingredients.
@@ -74,9 +73,9 @@
     <div class="card feature-card">
         <div class="feature-card-header">
             <div class="feature-icon-wrapper warning">
-                <i class="fas fa-brain"></i>
+                <i class="fas fa-wand-magic-sparkles"></i>
             </div>
-            <h3 class="feature-title">AI Predictions</h3>
+            <h3 class="feature-title">Predictions</h3>
         </div>
         <p class="feature-desc">
             Use machine learning to predict demand and prevent stockouts before they happen.
@@ -143,18 +142,10 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // 1. Total Products
                 document.getElementById('totalProducts').textContent = data.stats.totalProducts || 0;
-                
-                // 2. Low Stock Items
                 document.getElementById('lowStockCount').textContent = data.stats.lowStockCount || 0;
-                
-                // 3. Total Logs (Using 'totalRevenue' ID)
                 document.getElementById('totalRevenue').textContent = data.stats.totalLogs || 0;
-                
-                // 4. AI Predictions Run (Using 'nearExpiryCount' ID)
                 document.getElementById('nearExpiryCount').textContent = data.stats.totalPredictions || 0;
-                
             } else {
                 console.error("Failed to load dashboard stats:", data.error);
             }
