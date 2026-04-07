@@ -2,8 +2,10 @@
 {% block title %}Reports{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-file-contract text-primary"></i> System Reports</h2>
+<div class="d-flex justify-between items-center mb-6" style="border-bottom: 1px solid var(--gray-200); padding-bottom: 1.5rem;">
+    <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+        <i class="fas fa-file-contract text-primary"></i> System Reports
+    </h2>
     <button id="btnPrintReport" class="btn btn-secondary d-none" onclick="printOfficialReport()">
         <i class="fas fa-print"></i> Print Report
     </button>
