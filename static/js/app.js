@@ -1353,10 +1353,6 @@ class IMSApp {
       btnExport: document.getElementById("btnExportReport") 
     };
 
-    if (this.rep.btnPrint) {
-        this.rep.btnPrint.addEventListener("click", () => window.print());
-    }
-
     if (this.rep.btnExport) {
         this.rep.btnExport.addEventListener("click", () => this.exportReportToCSV());
     }
