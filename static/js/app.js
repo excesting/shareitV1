@@ -93,7 +93,7 @@ class IMSApp {
   // ==========================================
   setupNavigation() {
     const currentPath = window.location.pathname;
-    document.querySelectorAll(".sidebar-link").forEach((link) => {
+    document.querySelectorAll(".sidebar-link, .nav-link").forEach((link) => {
       if (link.getAttribute("href") === currentPath) {
           link.classList.add("active");
       } else {
@@ -1159,9 +1159,11 @@ class IMSApp {
 
     this.charts = {};
 
-    Chart.defaults.font.family = "'Inter', sans-serif";
-    Chart.defaults.color = "#6b7280";
-    Chart.defaults.scale.grid.color = "#f3f4f6";
+    if (typeof Chart !== 'undefined') {
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.color = "#6b7280";
+        Chart.defaults.scale.grid.color = "#f3f4f6";
+    }
 
     if (this.fa.item) {
       const uniqueNames = new Set();
@@ -1175,7 +1177,7 @@ class IMSApp {
       sortedIngredients.sort((a, b) => a.name.localeCompare(b.name));
       
       this.fa.item.innerHTML = sortedIngredients.length > 0 
-        ? sortedIngredients.map(i => `<option value="${i.name}">${i.name}</option>`).join("")
+        ? sortedIngredients.map(i => `<option value="${this.escapeHtml(i.name)}">${this.escapeHtml(i.name)}</option>`).join("")
         : `<option value="Pork">Pork</option>`;
     }
 
@@ -1203,10 +1205,7 @@ class IMSApp {
 
   renderAnalytics() {
     const logs = this.cachedDailyLogs;
-    if (!logs || logs.length === 0) {
-      console.warn("No daily logs available for analytics.");
-      return;
-    }
+    if (!logs || logs.length === 0) return;
 
     const bVal = this.fa.branch.value;
     const sDate = this.fa.startDate.value;
@@ -1237,135 +1236,88 @@ class IMSApp {
       }
     });
 
-    this.fa.stats.totalCust.textContent = this.formatNumber(totalCustomers);
-    this.fa.stats.avgCust.textContent = this.formatNumber(avgCustomers);
-    this.fa.stats.selectedTotal.textContent = this.formatNumber(selectedItemTotal.toFixed(2));
-    this.fa.stats.daysCovered.textContent = String(totalDays);
+    if (this.fa.stats.totalCust) this.fa.stats.totalCust.textContent = this.formatNumber(totalCustomers);
+    if (this.fa.stats.avgCust) this.fa.stats.avgCust.textContent = this.formatNumber(avgCustomers);
+    if (this.fa.stats.selectedTotal) this.fa.stats.selectedTotal.textContent = this.formatNumber(selectedItemTotal.toFixed(2));
+    if (this.fa.stats.daysCovered) this.fa.stats.daysCovered.textContent = String(totalDays);
 
     const dates = filtered.map(l => l.date);
     const customersData = filtered.map(l => l.customers || 0);
     const itemTrendData = filtered.map(l => l.items?.[selectedItem] || 0);
 
-    const sortedIngredients = Object.entries(ingredientTotals)
-      .sort((a, b) => b[1] - a[1]);
+    const sortedIngredients = Object.entries(ingredientTotals).sort((a, b) => b[1] - a[1]);
     const topIngredients = sortedIngredients.slice(0, 7); 
 
-    this.drawChart("faCustomersChart", "customers", {
-      type: "line",
-      data: {
-        labels: dates,
-        datasets: [{
-          label: "Customers",
-          data: customersData,
-          borderColor: "#2563eb",
-          backgroundColor: "rgba(37, 99, 235, 0.1)",
-          borderWidth: 2,
-          pointBackgroundColor: "#ffffff",
-          pointBorderColor: "#2563eb",
-          pointBorderWidth: 2,
-          pointRadius: 4,
-          fill: true,
-          tension: 0.4 
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { display: false } }, 
-          y: { beginAtZero: true, grid: { borderDash: [4, 4] } }
-        }
-      }
-    });
+    if (typeof Chart !== 'undefined') {
+        this.drawChart("faCustomersChart", "customers", {
+          type: "line",
+          data: {
+            labels: dates,
+            datasets: [{
+              label: "Customers", data: customersData, borderColor: "#2563eb",
+              backgroundColor: "rgba(37, 99, 235, 0.1)", borderWidth: 2,
+              pointBackgroundColor: "#ffffff", pointBorderColor: "#2563eb",
+              pointBorderWidth: 2, pointRadius: 4, fill: true, tension: 0.4 
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { borderDash: [4, 4] } } } }
+        });
 
-    this.drawChart("faTopItemsChart", "topItems", {
-      type: "bar",
-      data: {
-        labels: topIngredients.map(i => i[0]),
-        datasets: [{
-          label: "Quantity Consumed",
-          data: topIngredients.map(i => i[1]),
-          backgroundColor: "#3b82f6",
-          borderRadius: 6, 
-          borderSkipped: false
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true, grid: { borderDash: [4, 4] } }
-        }
-      }
-    });
+        this.drawChart("faTopItemsChart", "topItems", {
+          type: "bar",
+          data: {
+            labels: topIngredients.map(i => i[0]),
+            datasets: [{
+              label: "Quantity Consumed", data: topIngredients.map(i => i[1]),
+              backgroundColor: "#3b82f6", borderRadius: 6, borderSkipped: false
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { borderDash: [4, 4] } } } }
+        });
 
-    this.drawChart("faItemTrendChart", "itemTrend", {
-      type: "line",
-      data: {
-        labels: dates,
-        datasets: [{
-          label: selectedItem,
-          data: itemTrendData,
-          borderColor: "#10b981", 
-          backgroundColor: "rgba(16, 185, 129, 0.1)",
-          borderWidth: 2,
-          pointBackgroundColor: "#ffffff",
-          pointBorderColor: "#10b981",
-          pointRadius: 4,
-          fill: true,
-          tension: 0.4
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true, grid: { borderDash: [4, 4] } }
-        }
-      }
-    });
+        this.drawChart("faItemTrendChart", "itemTrend", {
+          type: "line",
+          data: {
+            labels: dates,
+            datasets: [{
+              label: selectedItem, data: itemTrendData, borderColor: "#10b981", 
+              backgroundColor: "rgba(16, 185, 129, 0.1)", borderWidth: 2,
+              pointBackgroundColor: "#ffffff", pointBorderColor: "#10b981",
+              pointRadius: 4, fill: true, tension: 0.4
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { borderDash: [4, 4] } } } }
+        });
 
-    const scatterData = filtered.map(l => ({
-      x: l.customers || 0,
-      y: l.items?.[selectedItem] || 0
-    }));
+        const scatterData = filtered.map(l => ({ x: l.customers || 0, y: l.items?.[selectedItem] || 0 }));
 
-    this.drawChart("faScatterChart", "scatter", {
-      type: "scatter",
-      data: {
-        datasets: [{
-          label: `Customers vs ${selectedItem}`,
-          data: scatterData,
-          backgroundColor: "rgba(245, 158, 11, 0.7)", 
-          borderColor: "#f59e0b",
-          pointRadius: 6,
-          pointHoverRadius: 8
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { title: { display: true, text: 'Customers' }, grid: { display: false } },
-          y: { title: { display: true, text: 'Qty Consumed' }, beginAtZero: true, grid: { borderDash: [4, 4] } }
-        }
-      }
-    });
+        this.drawChart("faScatterChart", "scatter", {
+          type: "scatter",
+          data: {
+            datasets: [{
+              label: `Customers vs ${selectedItem}`, data: scatterData,
+              backgroundColor: "rgba(245, 158, 11, 0.7)", borderColor: "#f59e0b",
+              pointRadius: 6, pointHoverRadius: 8
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Customers' }, grid: { display: false } }, y: { title: { display: true, text: 'Qty Consumed' }, beginAtZero: true, grid: { borderDash: [4, 4] } } } }
+        });
+    }
 
-    this.fa.tableBody.innerHTML = sortedIngredients.length === 0 
-      ? `<tr><td colspan="3" class="text-center text-muted">No data found for this range.</td></tr>`
-      : sortedIngredients.map((item, index) => {
-          const invItem = this.cachedInventory.find(i => i.name === item[0]);
-          const unit = invItem ? invItem.unit : "";
-          return `
-            <tr>
-              <td><strong>#${index + 1}</strong></td>
-              <td>${this.escapeHtml(item[0])}</td>
-              <td><span class="badge badge-info">${this.formatNumber(item[1].toFixed(2))} ${unit}</span></td>
-            </tr>`;
-        }).join("");
+    if (this.fa.tableBody) {
+        this.fa.tableBody.innerHTML = sortedIngredients.length === 0 
+          ? `<tr><td colspan="3" class="text-center text-muted">No data found for this range.</td></tr>`
+          : sortedIngredients.map((item, index) => {
+              const invItem = this.cachedInventory.find(i => i.name === item[0]);
+              const unit = invItem ? invItem.unit : "";
+              return `
+                <tr>
+                  <td><strong>#${index + 1}</strong></td>
+                  <td>${this.escapeHtml(item[0])}</td>
+                  <td><span class="badge badge-info">${this.formatNumber(item[1].toFixed(2))} ${unit}</span></td>
+                </tr>`;
+            }).join("");
+    }
   }
 
   drawChart(canvasId, chartKey, config) {
