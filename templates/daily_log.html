@@ -1,31 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Daily Log - Food Consumption{% endblock %}
+{% block title %}Daily Logs{% endblock %}
+{% block page_title %}Daily Logs{% endblock %}
 
 {% block head %}
 <style>
-    /* Fixed height and scrollable area for history logs */
     .scrollable-history {
-        max-height: 450px; /* Adjust height as needed */
+        max-height: 450px; 
         overflow-y: auto;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--gray-200);
         border-radius: 8px;
     }
-
-    /* Keep the table headers visible while scrolling */
     .scrollable-history thead th {
         position: sticky;
         top: 0;
-        background-color: #f8fafc;
+        background-color: var(--gray-50);
         z-index: 10;
-        border-bottom: 2px solid #cbd5e1;
+        border-bottom: 2px solid var(--gray-300);
     }
-
-    /* Styling for the items entry table to keep it compact */
     .items-entry-container {
         max-height: 300px;
         overflow-y: auto;
-        border: 1px solid #cbd5e1;
+        border: 1px solid var(--gray-200);
         border-radius: 4px;
         margin-bottom: 1rem;
     }
@@ -33,11 +29,9 @@
 {% endblock %}
 
 {% block content %}
-<div class="card mb-6">
-  <div class="card-header">
-    <h1 class="card-title"><i class="fas fa-clipboard-list text-primary"></i> Daily Consumption Log</h1>
-    <p class="card-subtitle">Record daily customers and actual ingredient consumption.</p>
-  </div>
+
+<div class="page-hero">
+    <p class="page-hero-subtitle">Record daily customers, actual ingredient consumption, and track waste.</p>
 </div>
 
 <div class="grid grid-4 mb-6">
@@ -100,7 +94,7 @@
     <div class="d-flex justify-between items-center" style="gap: 0.75rem;">
       <div class="d-flex items-center" style="gap: 0.75rem;">
         <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Log</button>
-        <button type="button" class="btn btn-warning" id="dlResetBtn"><i class="fas fa-rotate-left"></i> Reset Form</button>
+        <button type="button" class="btn btn-secondary" id="dlResetBtn"><i class="fas fa-rotate-left"></i> Reset Form</button>
       </div>
       <button type="button" class="btn btn-danger" id="dlClearAllBtn"><i class="fas fa-trash"></i> Clear All Logs</button>
     </div>
