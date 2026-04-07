@@ -1,123 +1,179 @@
 {% extends "base.html" %}
 
-{% block title %}Predictions - Food Consumption{% endblock %}
+{% block title %}Reports{% endblock %}
+{% block page_title %}Reports{% endblock %}
 
 {% block content %}
 <div class="page-hero">
     <p class="page-hero-subtitle">
-        Predict expected customers and ingredient consumption using the backend API.
+        Print and export official inventory and consumption reports.
     </p>
 </div>
 
-<div class="card mb-6">
-  <div class="card-header">
-    <h2 class="card-title"><i class="fas fa-sliders text-primary"></i> Forecast Inputs</h2>
-    <p class="card-subtitle">Choose a date and branch. Weekday and Month will be derived automatically.</p>
-  </div>
-
-  <form id="predictionForm" action="javascript:void(0)">
-    <div class="grid grid-4">
-        <div class="form-group">
-          <label class="form-label" for="pfStartDate"><i class="fas fa-calendar"></i> Start Date</label>
-          <input id="pfStartDate" name="start_date" type="date" class="form-control" required />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="pfHorizon"><i class="fas fa-clock"></i> Forecast Horizon</label>
-          <select id="pfHorizon" name="horizon_days" class="form-control" required>
-            <option value="3">Next 3 Days</option>
-            <option value="7" selected>Next 7 Days</option>
-            <option value="14">Next 14 Days</option>
-            <option value="30">Next 30 Days</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="pfBranch"><i class="fas fa-store"></i> Branch</label>
-            <select id="pfBranch" class="form-control" required>
-              <option value="0">Lipa</option>
-              <option value="1">Malvar</option>
-            </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label"><i class="fas fa-info-circle"></i> Forecast Window</label>
-          <div class="form-control" id="pfDerived" style="display:flex;align-items:center;">
-            <small class="text-muted">Range details will show here.</small>
-          </div>
-        </div>
-    </div>
-
-    <div class="grid grid-3 mt-4">
-      <div class="form-group">
-        <label class="form-label" for="pfMode"><i class="fas fa-bullseye"></i> Mode</label>
-        <select id="pfMode" name="mode" class="form-control">
-          <option value="all" selected>Predict Customers + All Ingredients</option>
-          <option value="one">Predict Customers + Selected Ingredient</option>
-        </select>
-      </div>
-
-      <div class="form-group" id="pfItemWrap">
-        <label class="form-label" for="pfItem"><i class="fas fa-utensils"></i> Ingredient</label>
-        <select id="pfItem" name="item" class="form-control"></select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">&nbsp;</label>
-        <button type="submit" class="btn btn-primary btn-lg w-full">
-          <i class="fas fa-calculator"></i> Run Forecast
+<div class="d-flex justify-between items-center mb-6" style="border-bottom: 1px solid var(--gray-200); padding-bottom: 1.5rem;">
+    <h2 style="margin: 0; display: flex; align-items: center; gap: 10px; font-size: 1.5rem; font-weight: 600;">
+        <i class="fas fa-file-contract text-primary"></i> Official Document
+    </h2>
+    <div class="d-flex" style="gap: 10px;">
+        <button type="button" class="btn btn-secondary d-none" id="btnOfficialPrint" onclick="printOfficialReport()">
+            <i class="fas fa-print"></i> Print Report
         </button>
-      </div>
+        <button type="button" id="btnExportReport" class="btn btn-primary d-none">
+            <i class="fas fa-download"></i> Export CSV
+        </button>
     </div>
-  </form>
 </div>
 
-<div class="grid grid-2 mb-6">
-  <div class="card">
+<div class="card mb-4" id="reportControls">
     <div class="card-header">
-      <h2 class="card-title"><i class="fas fa-users text-primary"></i> Predicted Customers</h2>
+        <h3 class="card-title">Report Parameters</h3>
     </div>
-    <div class="p-4">
-      <div class="stats-number" id="predCustomers">-</div>
-      <div class="stats-label">Customers</div>
+    <div class="p-3">
+        <form id="reportForm">
+            <div class="grid grid-4">
+                <div class="form-group">
+                    <label class="form-label">Report Type</label>
+                    <select id="repType" class="form-control" required>
+                        <option value="inventory_consumption">Inventory Consumption Report</option>
+                        <option value="inventory_waste">Inventory Waste Report</option>
+                        <option value="inventory_status">Inventory Status Report</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Branch</label>
+                    <select class="form-control" id="repBranch">
+                        {% if session.get('role') == 'admin' %}
+                            <option value="all">All Branches</option>
+                            <option value="0">Lipa (Main)</option>
+                            <option value="1">Malvar</option>
+                        {% else %}
+                            {% if session.get('branch_id') == 0 %}
+                                <option value="0">Lipa (Main)</option>
+                            {% elif session.get('branch_id') == 1 %}
+                                <option value="1">Malvar</option>
+                            {% endif %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Start Date (Optional)</label>
+                    <input type="date" class="form-control" id="repStartDate">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">End Date (Optional)</label>
+                    <input type="date" class="form-control" id="repEndDate">
+                </div>
+            </div>
+            <div class="mt-4">
+                <button type="submit" class="btn btn-primary w-full">
+                    <i class="fas fa-bolt"></i> Generate Report
+                </button>
+            </div>
+        </form>
     </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <h2 class="card-title"><i class="fas fa-utensils text-success"></i> Consumption Summary</h2>
-    </div>
-    <div class="p-4" id="predSummary">
-      <p class="text-muted">Run a forecast to see results.</p>
-    </div>
-  </div>
 </div>
 
-<div class="card mb-6">
-  <div class="card-header">
-    <h2 class="card-title"><i class="fas fa-calendar-week text-primary"></i> Daily Consumption Cards</h2>
-  </div>
-  <div class="p-3" id="predDailyCards">
-    <p class="text-muted">Run a forecast to see daily results.</p>
-  </div>
+<div class="card d-none" id="reportOutputCard">
+    <div class="card-header d-flex justify-between items-center">
+        <h3 class="card-title" id="reportOutputTitle">Report Output</h3>
+        <span class="badge badge-info" id="reportTimestamp"></span>
+    </div>
+    <div class="p-3" style="overflow-x: auto;">
+        <table class="table" id="reportTable">
+            <thead id="reportHead"></thead>
+            <tbody id="reportBody"></tbody>
+        </table>
+    </div>
 </div>
 
-<div class="card mb-6">
-  <div class="card-header">
-    <h2 class="card-title"><i class="fas fa-clock-rotate-left text-primary"></i> Prediction DB History</h2>
-  </div>
-  <div class="d-flex justify-end items-center p-3">
-    <button id="btnClearPredHistory" class="btn btn-danger"><i class="fas fa-trash"></i> Clear History</button>
-  </div>
-  <div class="table-container">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Date Range</th><th>Branch</th><th>Remarks</th><th>Customers</th><th>Top Items</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="predHistoryBody"></tbody>
-    </table>
-  </div>
-</div>
+<script>
+function printOfficialReport() {
+    // 1. Grab only the HTML inside the report card
+    const reportTitle = document.getElementById('reportOutputTitle').innerText;
+    const reportTimestamp = document.getElementById('reportTimestamp').innerText;
+    const tableHead = document.getElementById('reportHead').innerHTML;
+    const tableBody = document.getElementById('reportBody').innerHTML;
+
+    // 2. Open a temporary, invisible window
+    const printWindow = window.open('', '_blank', 'height=800,width=1000');
+
+    // 3. Write a brand new, perfectly formatted HTML document just for the printer
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>${reportTitle}</title>
+            <style>
+                /* Official Print Styling */
+                body { 
+                    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; 
+                    padding: 40px; 
+                    color: #111827; 
+                }
+                .header { 
+                    text-align: center; 
+                    margin-bottom: 30px; 
+                    padding-bottom: 20px; 
+                    border-bottom: 2px solid #e5e7eb;
+                }
+                .header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px; }
+                .header h1 span { color: #dc2626; }
+                .header p { margin: 5px 0 0 0; color: #6b7280; font-size: 14px; }
+                
+                .report-meta {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 20px;
+                    font-weight: bold;
+                    font-size: 18px;
+                }
+                .timestamp { color: #64748b; font-size: 14px; font-weight: normal; }
+                
+                table { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin-top: 10px; 
+                }
+                th, td { 
+                    border: 1px solid #cbd5e1; 
+                    padding: 12px; 
+                    text-align: left; 
+                    font-size: 14px; 
+                }
+                th { 
+                    background-color: #f8fafc; 
+                    font-weight: bold; 
+                    color: #334155;
+                }
+                tr:nth-child(even) { background-color: #f8fafc; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>SHAREAT <span>PRIMA</span></h1>
+                <p>Official System Report Document</p>
+            </div>
+
+            <div class="report-meta">
+                <span>${reportTitle}</span>
+                <span class="timestamp">Generated: ${reportTimestamp}</span>
+            </div>
+
+            <table>
+                <thead>${tableHead}</thead>
+                <tbody>${tableBody}</tbody>
+            </table>
+        </body>
+        </html>
+    `);
+
+    // 4. Wait a split second for the browser to render it, then trigger the print dialog
+    printWindow.document.close();
+    printWindow.focus();
+    
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close(); // Closes the temporary window automatically
+    }, 250);
+}
+</script>
 {% endblock %}
