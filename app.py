@@ -315,7 +315,7 @@ def delete_inventory(item_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ==========================================
-# API Routes: Daily Logs
+# API Routes: Daily Logs (UPDATED FOR EAT-ALL-YOU-CAN WASTE MATH)
 # ==========================================
 @app.route('/api/daily-logs', methods=['GET'])
 @login_required
@@ -373,25 +373,33 @@ def save_daily_log():
             
             cur.execute("SELECT qty, waste FROM daily_log_items WHERE log_id = %s AND ingredient = %s", (log_id, ingredient))
             old_row = cur.fetchone()
-            old_qty = old_row['qty'] if old_row else 0.0
             
+            # Grab the old values
+            old_qty = old_row['qty'] if old_row else 0.0
+            old_waste = old_row['waste'] if old_row else 0.0
+            
+            # --- NEW MATH ---
+            # Both Consumption AND Waste reduce the total inventory stock.
             qty_difference = new_qty - old_qty
+            waste_difference = new_waste - old_waste
+            total_deduction = qty_difference + waste_difference
             
             cur.execute("""
                 INSERT INTO daily_log_items (log_id, ingredient, qty, waste) VALUES (%s, %s, %s, %s)
                 ON CONFLICT(log_id, ingredient) DO UPDATE SET qty=excluded.qty, waste=excluded.waste
             """, (log_id, ingredient, new_qty, new_waste))
             
-            if qty_difference != 0:
+            if total_deduction != 0:
                 cur.execute("""
                     UPDATE inventory 
                     SET stock = stock - %s, updated_at = %s
                     WHERE name = %s AND branch_id = %s
-                """, (qty_difference, current_time, ingredient, log_branch_id))
+                """, (total_deduction, current_time, ingredient, log_branch_id))
                 
         db.commit()
         return jsonify({"success": True, "log_id": log_id}), 200
     except Exception as e:
+        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/daily-logs/<int:log_id>', methods=['DELETE'])
@@ -408,16 +416,18 @@ def delete_single_daily_log(log_id):
         if session.get('role') != 'admin' and log['branch_id'] != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-        cur.execute("SELECT ingredient, qty FROM daily_log_items WHERE log_id = %s", (log_id,))
+        # Refund BOTH consumed qty and waste back to inventory
+        cur.execute("SELECT ingredient, qty, waste FROM daily_log_items WHERE log_id = %s", (log_id,))
         items = cur.fetchall()
         
         current_time = datetime.now().isoformat()
         for item in items:
+            total_refund = item['qty'] + item['waste']
             cur.execute("""
                 UPDATE inventory 
                 SET stock = stock + %s, updated_at = %s
                 WHERE name = %s AND branch_id = %s
-            """, (item['qty'], current_time, item['ingredient'], log['branch_id']))
+            """, (total_refund, current_time, item['ingredient'], log['branch_id']))
 
         cur.execute("DELETE FROM daily_log_items WHERE log_id = %s", (log_id,))
         cur.execute("DELETE FROM daily_logs WHERE id = %s", (log_id,))
@@ -425,6 +435,7 @@ def delete_single_daily_log(log_id):
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
+        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
     
 @app.route('/api/daily-logs/clear', methods=['DELETE'])
