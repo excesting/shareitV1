@@ -1165,21 +1165,26 @@ class IMSApp {
         Chart.defaults.scale.grid.color = "#f3f4f6";
     }
 
-    if (this.fa.item) {
-      const uniqueNames = new Set();
-      const sortedIngredients = [];
-      this.cachedInventory.forEach(i => {
-        if (!uniqueNames.has(i.name)) {
-          uniqueNames.add(i.name);
-          sortedIngredients.push(i);
+       
+        if (this.fa.item) {
+          const uniqueNames = new Set();
+          const sortedIngredients = [];
+          
+          this.cachedInventory.forEach(i => {
+            if (!uniqueNames.has(i.name)) {
+              uniqueNames.add(i.name);
+              sortedIngredients.push(i);
+            }
+          });
+          
+          sortedIngredients.sort((a, b) => a.name.localeCompare(b.name));
+          
+          // ADDED: Include an "All Ingredients" option as the default
+          this.fa.item.innerHTML = `
+            <option value="all" selected>All Ingredients</option>
+            ${sortedIngredients.map(i => `<option value="${this.escapeHtml(i.name)}">${this.escapeHtml(i.name)}</option>`).join("")}
+          `;
         }
-      });
-      sortedIngredients.sort((a, b) => a.name.localeCompare(b.name));
-      
-      this.fa.item.innerHTML = sortedIngredients.length > 0 
-        ? sortedIngredients.map(i => `<option value="${this.escapeHtml(i.name)}">${this.escapeHtml(i.name)}</option>`).join("")
-        : `<option value="Pork">Pork</option>`;
-    }
 
     this.resetAnalyticsFilters();
 
@@ -1352,6 +1357,7 @@ class IMSApp {
       btnPrint: document.getElementById("btnPrintReport"),
       btnExport: document.getElementById("btnExportReport") 
     };
+
 
     if (this.rep.btnExport) {
         this.rep.btnExport.addEventListener("click", () => this.exportReportToCSV());
