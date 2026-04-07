@@ -11,8 +11,7 @@ from predict_service import predict_all
 
 app = Flask(__name__)
 
-# Railway injects DATABASE_URL automatically. 
-# We provide a default fallback for your local testing if you run a local Postgres server.
+# Railway / Hosted Postgres URL
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ims")
 
 # Set a secret key for session encryption (Required for logins)
@@ -24,9 +23,8 @@ app.secret_key = 'your_super_secret_key_here'
 def init_db():
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                # PostgreSQL uses SERIAL instead of AUTOINCREMENT
-                cur.execute("""
+            with conn.cursor() as cursor:
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS prediction_runs (
                         id SERIAL PRIMARY KEY,
                         start_date TEXT,
@@ -88,24 +86,20 @@ def init_db():
                 """)
                 
                 # Automatically create default accounts if none exist
-                cur.execute("SELECT COUNT(*) FROM users")
-                if cur.fetchone()[0] == 0:
+                cursor.execute("SELECT COUNT(*) FROM users")
+                if cursor.fetchone()[0] == 0:
                     default_users = [
-                        # Super Admin (Access to everything, defaults to branch 0)
                         ('admin', generate_password_hash('admin123'), 'admin', 0),
-                        # Lipa Manager (Locked to branch 0)
                         ('lipa_mgr', generate_password_hash('lipa123'), 'manager', 0),
-                        # Malvar Manager (Locked to branch 1)
                         ('malvar_mgr', generate_password_hash('malvar123'), 'manager', 1)
                     ]
-                    # psycopg2 uses %s for variables, not ?
-                    cur.executemany(
+                    cursor.executemany(
                         "INSERT INTO users (username, password_hash, role, branch_id) VALUES (%s, %s, %s, %s)", 
                         default_users
                     )
             conn.commit()
     except Exception as e:
-        print(f"Database initialization skipped or failed: {e}")
+        print(f"DB Init error: {e}")
 
 init_db()
 
@@ -132,10 +126,6 @@ def login_required(f):
     return decorated_function
 
 def get_user_branch():
-    """
-    Returns the locked branch_id for managers.
-    Returns None if Admin is logged in and wants to view ALL branches.
-    """
     if session.get('role') == 'admin':
         branch_req = request.args.get('branch_id')
         if branch_req is not None and branch_req != 'all':
@@ -325,7 +315,7 @@ def delete_inventory(item_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ==========================================
-# API Routes: Daily Logs (Branch Aware + Smart Deductions w/ Waste)
+# API Routes: Daily Logs
 # ==========================================
 @app.route('/api/daily-logs', methods=['GET'])
 @login_required
@@ -367,9 +357,9 @@ def save_daily_log():
         cur.execute("""
             INSERT INTO daily_logs (date, branch_id, customers, remarks) VALUES (%s, %s, %s, %s)
             ON CONFLICT(date, branch_id) DO UPDATE SET customers=excluded.customers, remarks=excluded.remarks
+            RETURNING id
         """, (data['date'], log_branch_id, float(data.get('customers', 0)), data.get('remarks', 'Normal')))
         
-        cur.execute("SELECT id FROM daily_logs WHERE date=%s AND branch_id=%s", (data['date'], log_branch_id))
         log_id = cur.fetchone()['id']
         current_time = datetime.now().isoformat()
         
@@ -402,7 +392,6 @@ def save_daily_log():
         db.commit()
         return jsonify({"success": True, "log_id": log_id}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/daily-logs/<int:log_id>', methods=['DELETE'])
@@ -436,7 +425,6 @@ def delete_single_daily_log(log_id):
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
     
 @app.route('/api/daily-logs/clear', methods=['DELETE'])
@@ -453,11 +441,10 @@ def clear_all_daily_logs():
         
         return jsonify({"success": True}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 #==========================================
-# Delete the Prediction Runs (Admin Only)
+# PREDICTIONS DELETE API
 #==========================================
 @app.route('/api/prediction-history/<int:id>', methods=['DELETE'])
 @login_required
@@ -476,7 +463,6 @@ def delete_prediction_history(id):
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
-        db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/prediction-history/clear', methods=['DELETE'])
@@ -492,6 +478,50 @@ def clear_prediction_history():
         else:
             cur.execute("DELETE FROM prediction_runs")
             
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+#==========================================
+# SETTINGS & USERS
+#==========================================
+@app.route('/settings')
+@login_required
+def settings_page():
+    if session.get('role') != 'admin':
+        flash("Only administrators can access the settings page.")
+        return redirect(url_for('home'))
+    
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT id, username, role, branch_id FROM users ORDER BY id ASC")
+        users = [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        users = []
+        print(f"Error loading users: {e}")
+
+    return render_template('settings.html', users=users)
+
+@app.route('/api/users/reset-password', methods=['POST'])
+@login_required
+def api_reset_password():
+    if session.get('role') != 'admin':
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
+        
+    data = request.get_json()
+    user_id = data.get('user_id')
+    new_password = data.get('new_password')
+    
+    if not user_id or not new_password:
+        return jsonify({"success": False, "error": "Missing data"}), 400
+        
+    try:
+        hashed_pw = generate_password_hash(new_password)
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed_pw, user_id))
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
@@ -512,6 +542,8 @@ def generate_report():
     data = request.json
     rep_type = data.get('type')
     requested_branch_id = data.get('branch_id')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
     
     user_role = session.get('role')
     user_branch_id = session.get('branch_id')
@@ -545,7 +577,7 @@ def generate_report():
                 b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
                 report_data.append([b_name, r['name'], r['unit'], round(r['stock'], 2), r['min_level'], r['max_level'], status])
             
-            return jsonify({"success": True, "title": "Inventory Status Report", "columns": columns, "data": report_data})
+            return jsonify({"success": True, "title": "Current Inventory Status Report", "columns": columns, "data": report_data})
 
         elif rep_type == "inventory_consumption":
             branch_filter = ""
@@ -553,12 +585,17 @@ def generate_report():
                 branch_filter = "AND dl.branch_id = %s"
                 params.append(int(branch_id))
 
+            date_filter = ""
+            if start_date and end_date:
+                date_filter = "AND dl.date >= %s AND dl.date <= %s"
+                params.extend([start_date, end_date])
+
             query = f"""
                 SELECT dl.date, dl.branch_id, dl.customers, dli.ingredient, dli.qty, i.unit
                 FROM daily_logs dl
                 JOIN daily_log_items dli ON dl.id = dli.log_id
                 LEFT JOIN inventory i ON dli.ingredient = i.name AND dl.branch_id = i.branch_id
-                WHERE dli.qty > 0 {branch_filter}
+                WHERE dli.qty > 0 {branch_filter} {date_filter}
                 ORDER BY dl.date DESC, dli.ingredient ASC
             """
             cur.execute(query, tuple(params))
@@ -570,7 +607,7 @@ def generate_report():
                 b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
                 report_data.append([r['date'], b_name, round(r['customers']), r['ingredient'], round(r['qty'], 2), r['unit'] or ""])
 
-            return jsonify({"success": True, "title": "Inventory Consumption Report", "columns": columns, "data": report_data})
+            return jsonify({"success": True, "title": f"Consumption Report ({start_date} to {end_date})", "columns": columns, "data": report_data})
 
         elif rep_type == "inventory_waste":
             branch_filter = ""
@@ -578,12 +615,17 @@ def generate_report():
                 branch_filter = "AND dl.branch_id = %s"
                 params.append(int(branch_id))
 
+            date_filter = ""
+            if start_date and end_date:
+                date_filter = "AND dl.date >= %s AND dl.date <= %s"
+                params.extend([start_date, end_date])
+
             query = f"""
                 SELECT dl.date, dl.branch_id, dli.ingredient, dli.waste, i.unit
                 FROM daily_logs dl
                 JOIN daily_log_items dli ON dl.id = dli.log_id
                 LEFT JOIN inventory i ON dli.ingredient = i.name AND dl.branch_id = i.branch_id
-                WHERE dli.waste > 0 {branch_filter}
+                WHERE dli.waste > 0 {branch_filter} {date_filter}
                 ORDER BY dl.date DESC, dli.ingredient ASC
             """
             cur.execute(query, tuple(params))
@@ -595,7 +637,7 @@ def generate_report():
                 b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
                 report_data.append([r['date'], b_name, r['ingredient'], round(r['waste'], 2), r['unit'] or ""])
 
-            return jsonify({"success": True, "title": "Inventory Waste Report", "columns": columns, "data": report_data})
+            return jsonify({"success": True, "title": f"Waste Report ({start_date} to {end_date})", "columns": columns, "data": report_data})
 
         else:
             return jsonify({"success": False, "error": "Invalid report type selected."}), 400
@@ -604,28 +646,32 @@ def generate_report():
         return jsonify({"success": False, "error": str(e)}), 500
     
 # ==========================================
-# API Routes: Prediction & Forecasting (Branch Aware)
+# API Routes: Prediction & Forecasting
 # ==========================================
 def save_prediction_to_db(result, start_date, end_date, branch_id, remarks):
     db = get_db()
     daily = result.get("daily", [])
-    cur = db.cursor()
-    # PostgreSQL uses RETURNING id to get the last inserted row
+    cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    
     cur.execute("""
         INSERT INTO prediction_runs (start_date, end_date, horizon_days, branch_id, remarks) 
         VALUES (%s, %s, %s, %s, %s) RETURNING id
     """, (start_date, end_date, len(daily), int(branch_id), remarks))
-    run_id = cur.fetchone()[0]
+    run_id = cur.fetchone()['id']
     
     for day in daily:
-        cur.execute("INSERT INTO prediction_daily (run_id, date, customers) VALUES (%s, %s, %s) RETURNING id", 
-                    (run_id, day["date"], float(day.get("customers", 0))))
-        daily_id = cur.fetchone()[0]
+        cur.execute("""
+            INSERT INTO prediction_daily (run_id, date, customers) 
+            VALUES (%s, %s, %s) RETURNING id
+        """, (run_id, day["date"], float(day.get("customers", 0))))
+        daily_id = cur.fetchone()['id']
         
         for ingredient, qty in day.get("ingredients", {}).items():
             unit = "L" if "juice" in ingredient.lower() else "kg"
-            cur.execute("INSERT INTO prediction_daily_items (daily_id, ingredient, unit, qty) VALUES (%s, %s, %s, %s)", 
-                        (daily_id, ingredient, unit, float(qty or 0)))
+            cur.execute("""
+                INSERT INTO prediction_daily_items (daily_id, ingredient, unit, qty) 
+                VALUES (%s, %s, %s, %s)
+            """, (daily_id, ingredient, unit, float(qty or 0)))
     db.commit()
     return run_id
 
@@ -662,8 +708,7 @@ def api_predict_range():
             last_week = (cur_date - timedelta(days=7)).strftime("%Y-%m-%d")
             
             def get_hist(target_date):
-                cur.execute("SELECT customers FROM daily_logs WHERE date=%s AND branch_id=%s", 
-                                (target_date, branch_id))
+                cur.execute("SELECT customers FROM daily_logs WHERE date=%s AND branch_id=%s", (target_date, branch_id))
                 row = cur.fetchone()
                 return float(row['customers']) if row else 0
 
