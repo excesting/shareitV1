@@ -47,6 +47,9 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: var(--font-family); color: var(--gray-800); background: var(--bg-main); font-size: 14px; }
 
+/* CRITICAL FIX: Force all inputs, dropdowns, and buttons to use the Inter font */
+input, select, textarea, button { font-family: inherit; }
+
 /* ---------------------------------------
    App Layout (Sidebar + Main)
 ---------------------------------------- */
@@ -138,7 +141,7 @@ body { font-family: var(--font-family); color: var(--gray-800); background: var(
 .stats-trend.negative { background: var(--danger-bg); color: var(--danger-color); }
 
 /* Buttons & Forms */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.625rem 1.25rem; font-size: 0.875rem; font-weight: 500; border: none; border-radius: 6px; cursor: pointer; transition: var(--transition); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.625rem 1.25rem; font-size: 0.875rem; font-weight: 500; border: none; border-radius: 6px; cursor: pointer; transition: var(--transition); font-family: inherit; }
 .btn-primary { background: var(--gray-900); color: var(--white); } 
 .btn-primary:hover { background: var(--primary-color); } 
 .btn-secondary { background: var(--gray-100); color: var(--gray-700); border: 1px solid var(--gray-200); }
@@ -147,7 +150,7 @@ body { font-family: var(--font-family); color: var(--gray-800); background: var(
 
 .form-group { margin-bottom: 1rem; }
 .form-label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--gray-700); font-size: 0.875rem; }
-.form-control { width: 100%; padding: 0.625rem 1rem; border: 1px solid var(--gray-200); border-radius: 6px; font-size: 0.875rem; transition: var(--transition); color: var(--gray-800); }
+.form-control { width: 100%; padding: 0.625rem 1rem; border: 1px solid var(--gray-200); border-radius: 6px; font-size: 0.875rem; transition: var(--transition); color: var(--gray-800); font-family: inherit; }
 .form-control:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px var(--primary-light); }
 
 /* Tables & Badges */
@@ -183,7 +186,7 @@ body { font-family: var(--font-family); color: var(--gray-800); background: var(
 .modal-content { position: relative; width: 100%; max-width: 600px; background: var(--white); border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1.5rem; border-bottom: 1px solid var(--gray-200); }
 .modal-body { padding: 1.5rem; }
-.modal-close { border: none; background: transparent; font-size: 1.25rem; color: var(--gray-400); cursor: pointer; transition: color 0.2s; }
+.modal-close { border: none; background: transparent; font-size: 1.25rem; color: var(--gray-400); cursor: pointer; transition: color 0.2s; font-family: inherit; }
 .modal-close:hover { color: var(--gray-900); }
 
 /* ---------------------------------------
@@ -197,7 +200,7 @@ body { font-family: var(--font-family); color: var(--gray-800); background: var(
 .custom-confirm-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 8px; color: var(--gray-900); }
 .custom-confirm-message { font-size: 0.875rem; color: var(--gray-600); margin-bottom: 24px; line-height: 1.5; }
 .custom-confirm-actions { display: flex; justify-content: center; gap: 12px; }
-.custom-confirm-actions button { min-width: 100px; padding: 8px 16px; border-radius: 6px; font-weight: 500; border: none; cursor: pointer; transition: opacity 0.2s; }
+.custom-confirm-actions button { min-width: 100px; padding: 8px 16px; border-radius: 6px; font-weight: 500; border: none; cursor: pointer; transition: opacity 0.2s; font-family: inherit; }
 .custom-confirm-actions button:hover { opacity: 0.85; }
 .btn-cancel-custom { background: var(--gray-200); color: var(--gray-800); }
 .btn-danger-custom { background: var(--danger-color); color: white; }
@@ -215,7 +218,7 @@ body { font-family: var(--font-family); color: var(--gray-800); background: var(
 .toast-content { flex-grow: 1; }
 .toast-title { font-weight: 700; color: #1f2937; font-size: 1rem; margin-bottom: 4px; }
 .toast-message { color: #4b5563; font-size: 0.875rem; line-height: 1.4; }
-.toast-close { background: none; border: none; color: #9ca3af; font-size: 20px; cursor: pointer; position: absolute; top: 10px; right: 12px; }
+.toast-close { background: none; border: none; color: #9ca3af; font-size: 20px; cursor: pointer; position: absolute; top: 10px; right: 12px; font-family: inherit; }
 .toast-close:hover { color: #4b5563; }
 @keyframes slideInRight { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes fadeOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
