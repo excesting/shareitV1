@@ -16,13 +16,11 @@ class IMSApp {
   async boot() {
     this.setupNavigation();
     this.setupAnimations();
-    this.setupCenteredConfirmModal(); // Installs the sleek popup
+    this.setupCenteredConfirmModal(); 
 
-    // Fetch master data from SQLite FIRST so all pages can use it instantly
     await this.fetchInventoryFromDB();
     await this.fetchDailyLogsFromDB();
 
-    // Initialize Pages
     this.initHomePage(); 
     this.initInventoryPage();
     this.initDailyLogPage();
@@ -32,7 +30,7 @@ class IMSApp {
   }
 
   // ==========================================
-  // 1.5 SLEEK CENTERED CONFIRM MODAL (NEW)
+  // 1.5 SLEEK CENTERED CONFIRM MODAL
   // ==========================================
   setupCenteredConfirmModal() {
     const modalHtml = `
@@ -57,7 +55,6 @@ class IMSApp {
     this.confirmBtn = document.getElementById("sleekConfirmBtn");
     this.cancelBtn = document.getElementById("sleekCancelBtn");
 
-    // Close on cancel or clicking outside the box
     this.cancelBtn.addEventListener("click", () => this.closeConfirmModal());
     this.confirmOverlay.addEventListener("click", (e) => {
         if (e.target === this.confirmOverlay) this.closeConfirmModal();
@@ -71,7 +68,6 @@ class IMSApp {
     this.confirmBtn.className = btnClass;
     this.confirmBtn.innerHTML = btnText;
 
-    // Clone and replace to reset event listeners safely
     const newBtn = this.confirmBtn.cloneNode(true);
     this.confirmBtn.parentNode.replaceChild(newBtn, this.confirmBtn);
     this.confirmBtn = newBtn;
@@ -110,33 +106,23 @@ class IMSApp {
   }
 
   // ==========================================
-  // 3. DATABASE FETCHERS (Global Cache)
+  // 3. DATABASE FETCHERS
   // ==========================================
   async fetchInventoryFromDB(branchId = "all") {
     try {
       let url = "/api/inventory";
-      if (branchId !== "all") {
-        url += `?branch_id=${branchId}`;
-      }
+      if (branchId !== "all") url += `?branch_id=${branchId}`;
       
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
         this.cachedInventory = data.items.map(item => ({
-          id: item.id, 
-          branch_id: item.branch_id,
-          name: item.name, 
-          unit: item.unit,
-          stock: Number(item.stock), 
-          min: Number(item.min_level), 
-          max: Number(item.max_level),
-          reorder_model: item.reorder_model || "rop",
-          updatedAt: item.updated_at
+          id: item.id, branch_id: item.branch_id, name: item.name, unit: item.unit,
+          stock: Number(item.stock), min: Number(item.min_level), max: Number(item.max_level),
+          reorder_model: item.reorder_model || "rop", updatedAt: item.updated_at
         }));
       }
-    } catch (e) {
-      console.error("Failed to fetch inventory", e);
-    }
+    } catch (e) { console.error("Failed to fetch inventory", e); }
   }
 
   async fetchDailyLogsFromDB() {
@@ -144,33 +130,24 @@ class IMSApp {
       const res = await fetch("/api/daily-logs");
       const data = await res.json();
       if (data.success) {
-        this.cachedDailyLogs = data.logs.map(log => ({
-          ...log, branchId: log.branch_id
-        }));
+        this.cachedDailyLogs = data.logs.map(log => ({ ...log, branchId: log.branch_id }));
       }
-    } catch (e) {
-      console.error("Failed to fetch daily logs", e);
-    }
+    } catch (e) { console.error("Failed to fetch daily logs", e); }
   }
 
-  // ==========================================
-  // 3.5 HOME PAGE DASHBOARD
-  // ==========================================
   async initHomePage() {
-    if (!document.getElementById("dashTotalProducts")) return;
-
+    const totalEl = document.getElementById("dashTotalProducts");
+    if (!totalEl) return;
     try {
       const res = await fetch("/api/dashboard-stats");
       const data = await res.json();
       if (data.success) {
-        document.getElementById("dashTotalProducts").textContent = this.formatNumber(data.stats.totalProducts);
+        totalEl.textContent = this.formatNumber(data.stats.totalProducts);
         document.getElementById("dashLowStock").textContent = this.formatNumber(data.stats.lowStockCount);
         document.getElementById("dashOutOfStock").textContent = this.formatNumber(data.stats.outOfStockCount);
         document.getElementById("dashTotalLogs").textContent = this.formatNumber(data.stats.totalLogs);
       }
-    } catch (e) {
-      console.error("Failed to load dashboard stats", e);
-    }
+    } catch (e) { console.error("Failed to load dashboard stats", e); }
   }
 
   // ==========================================
@@ -208,21 +185,10 @@ class IMSApp {
       },
     };
 
-    const btnAdd = document.getElementById("btnAddItem");
-    if (btnAdd) {
-      btnAdd.addEventListener("click", (e) => {
-        e.preventDefault(); 
-        this.openInventoryModal(null); 
-      });
-    }
-
-    if (this.inv.modal) {
-      this.inv.modal.addEventListener("click", (e) => {
-        if (e.target?.dataset?.close === "true" || e.target?.closest?.('[data-close="true"]')) {
-           this.closeInventoryModal();
-        }
-      });
-    }
+    document.getElementById("btnAddItem")?.addEventListener("click", (e) => { e.preventDefault(); this.openInventoryModal(null); });
+    this.inv.modal?.addEventListener("click", (e) => {
+        if (e.target?.dataset?.close === "true" || e.target?.closest?.('[data-close="true"]')) this.closeInventoryModal();
+    });
 
     this.inv.branchFilter?.addEventListener("change", () => this.renderInventory());
     
@@ -243,13 +209,9 @@ class IMSApp {
     this.inv.filter?.addEventListener("change", () => this.renderInventory());
     this.inv.btnRefreshReorder?.addEventListener("click", () => this.generateAIReorderRecommendations());
     
-    // --- AUTOMATIC RECALCULATION TRIGGERS ---
-    document.getElementById("rrServiceLevel")?.addEventListener("change", () => this.generateAIReorderRecommendations());
-    document.getElementById("rrHorizon")?.addEventListener("change", () => this.generateAIReorderRecommendations());
-    document.getElementById("rrLeadTime")?.addEventListener("change", () => this.generateAIReorderRecommendations());
-    document.getElementById("rrBranch")?.addEventListener("change", () => this.generateAIReorderRecommendations());
-    document.getElementById("rrItemFilter")?.addEventListener("change", () => this.generateAIReorderRecommendations());
-    // ----------------------------------------
+    ["rrServiceLevel", "rrHorizon", "rrLeadTime", "rrBranch", "rrItemFilter"].forEach(id => {
+        document.getElementById(id)?.addEventListener("change", () => this.generateAIReorderRecommendations());
+    });
     
     this.inv.form?.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -460,13 +422,21 @@ class IMSApp {
   async generateAIReorderRecommendations() {
     if (!this.inv?.reorderBody) return;
 
-    const horizon = Number(document.getElementById("rrHorizon")?.value) || 7;
-    const leadTime = Number(document.getElementById("rrLeadTime")?.value) || 2;
-    const branchId = Number(document.getElementById("rrBranch")?.value) || 0;
-    const Z = Number(document.getElementById("rrServiceLevel")?.value) || 1.645;
-    const selectedItem = document.getElementById("rrItemFilter")?.value || "all";
+        // --- CRITICAL FIX: Handle '0' properly without treating it as 'false' ---
+        const valHorizon = parseFloat(document.getElementById("rrHorizon")?.value);
+        const horizon = isNaN(valHorizon) ? 7 : valHorizon;
 
-    const targetElement = this.inv.reorderBody.closest('.card');
+        const valLeadTime = parseFloat(document.getElementById("rrLeadTime")?.value);
+        const leadTime = isNaN(valLeadTime) ? 2 : valLeadTime;
+
+        const branchId = Number(document.getElementById("rrBranch")?.value) || 0;
+
+        const valZ = parseFloat(document.getElementById("rrServiceLevel")?.value);
+        const Z = isNaN(valZ) ? 1.645 : valZ;
+        // ------------------------------------------------------------------------
+
+        const selectedItem = document.getElementById("rrItemFilter")?.value || "all";
+        const targetElement = this.inv.reorderBody.closest('.card');
 
     try {
       this.showLoading(targetElement, "Calculating AI Math Models...");
@@ -1154,7 +1124,9 @@ class IMSApp {
         selectedTotal: document.getElementById("faSelectedTotal"),
         daysCovered: document.getElementById("faDaysCovered")
       },
-      tableBody: document.getElementById("faItemsTableBody")
+      // FIX: Ensure these match the new IDs in analytics.html!
+      topTableBody: document.getElementById("faTopTableBody"),
+      leastTableBody: document.getElementById("faLeastTableBody")
     };
 
     this.charts = {};
@@ -1165,28 +1137,31 @@ class IMSApp {
         Chart.defaults.scale.grid.color = "#f3f4f6";
     }
 
-       
-        if (this.fa.item) {
-          const uniqueNames = new Set();
-          const sortedIngredients = [];
-          
-          this.cachedInventory.forEach(i => {
-            if (!uniqueNames.has(i.name)) {
-              uniqueNames.add(i.name);
-              sortedIngredients.push(i);
-            }
-          });
-          
-          sortedIngredients.sort((a, b) => a.name.localeCompare(b.name));
-          
-          // ADDED: Include an "All Ingredients" option as the default
-          this.fa.item.innerHTML = `
-            <option value="all" selected>All Ingredients</option>
-            ${sortedIngredients.map(i => `<option value="${this.escapeHtml(i.name)}">${this.escapeHtml(i.name)}</option>`).join("")}
-          `;
+    if (this.fa.item) {
+      const uniqueNames = new Set();
+      const sortedIngredients = [];
+      
+      this.cachedInventory.forEach(i => {
+        if (!uniqueNames.has(i.name)) {
+          uniqueNames.add(i.name);
+          sortedIngredients.push(i);
         }
+      });
+      
+      sortedIngredients.sort((a, b) => a.name.localeCompare(b.name));
+      
+      this.fa.item.innerHTML = `
+        <option value="all" selected>All Ingredients</option>
+        ${sortedIngredients.map(i => `<option value="${this.escapeHtml(i.name)}">${this.escapeHtml(i.name)}</option>`).join("")}
+      `;
+    }
 
     this.resetAnalyticsFilters();
+
+    // Instant Update Event Listeners
+    [this.fa.branch, this.fa.startDate, this.fa.endDate, this.fa.item].forEach(el => {
+        if(el) el.addEventListener("change", () => this.renderAnalytics());
+    });
 
     this.fa.btnApply.addEventListener("click", () => this.renderAnalytics());
     this.fa.btnReset.addEventListener("click", () => {
@@ -1205,7 +1180,7 @@ class IMSApp {
     this.fa.endDate.value = today.toISOString().slice(0, 10);
     this.fa.startDate.value = thirtyDaysAgo.toISOString().slice(0, 10);
     this.fa.branch.value = "all";
-    if (this.fa.item.options.length > 0) this.fa.item.selectedIndex = 0;
+    if (this.fa.item && this.fa.item.options.length > 0) this.fa.item.value = "all";
   }
 
   renderAnalytics() {
@@ -1229,22 +1204,43 @@ class IMSApp {
     const avgCustomers = totalDays > 0 ? (totalCustomers / totalDays).toFixed(0) : 0;
     
     let selectedItemTotal = 0;
+    
     const ingredientTotals = {};
+    const ingredientWaste = {};
 
     filtered.forEach(log => {
-      if (log.items && log.items[selectedItem]) {
+      if (selectedItem !== "all" && log.items && log.items[selectedItem]) {
         selectedItemTotal += Number(log.items[selectedItem]);
       }
       
+      // Calculate Consumed
       for (const [key, qty] of Object.entries(log.items || {})) {
         ingredientTotals[key] = (ingredientTotals[key] || 0) + Number(qty);
+      }
+      
+      // Calculate Waste (CRITICAL FIX FOR TABLES)
+      for (const [key, qty] of Object.entries(log.waste || {})) {
+        ingredientWaste[key] = (ingredientWaste[key] || 0) + Number(qty);
+        // Ensure key exists in totals so it shows up in ranking even if 0 consumed
+        if (!ingredientTotals[key]) ingredientTotals[key] = 0;
       }
     });
 
     if (this.fa.stats.totalCust) this.fa.stats.totalCust.textContent = this.formatNumber(totalCustomers);
     if (this.fa.stats.avgCust) this.fa.stats.avgCust.textContent = this.formatNumber(avgCustomers);
-    if (this.fa.stats.selectedTotal) this.fa.stats.selectedTotal.textContent = this.formatNumber(selectedItemTotal.toFixed(2));
     if (this.fa.stats.daysCovered) this.fa.stats.daysCovered.textContent = String(totalDays);
+
+    if (this.fa.stats.selectedTotal) {
+        if (selectedItem === "all") {
+            this.fa.stats.selectedTotal.textContent = "-";
+            this.fa.stats.selectedTotal.classList.add("text-muted");
+            this.fa.stats.selectedTotal.classList.remove("text-primary");
+        } else {
+            this.fa.stats.selectedTotal.textContent = this.formatNumber(selectedItemTotal.toFixed(2));
+            this.fa.stats.selectedTotal.classList.remove("text-muted");
+            this.fa.stats.selectedTotal.classList.add("text-primary");
+        }
+    }
 
     const dates = filtered.map(l => l.date);
     const customersData = filtered.map(l => l.customers || 0);
@@ -1253,15 +1249,21 @@ class IMSApp {
     const sortedIngredients = Object.entries(ingredientTotals).sort((a, b) => b[1] - a[1]);
     const topIngredients = sortedIngredients.slice(0, 7); 
 
+    // Dynamic coloring for Top Consumed Ingredients Bar Chart
+    const topItemsColors = topIngredients.map(i => {
+        if (selectedItem === "all") return "#ef4444"; // Red for all
+        return i[0] === selectedItem ? "#ef4444" : "#e5e7eb"; // Red for selected, gray for others
+    });
+
     if (typeof Chart !== 'undefined') {
         this.drawChart("faCustomersChart", "customers", {
           type: "line",
           data: {
             labels: dates,
             datasets: [{
-              label: "Customers", data: customersData, borderColor: "#2563eb",
-              backgroundColor: "rgba(37, 99, 235, 0.1)", borderWidth: 2,
-              pointBackgroundColor: "#ffffff", pointBorderColor: "#2563eb",
+              label: "Customers", data: customersData, borderColor: "#1f2937",
+              backgroundColor: "rgba(31, 41, 55, 0.1)", borderWidth: 2,
+              pointBackgroundColor: "#ffffff", pointBorderColor: "#1f2937",
               pointBorderWidth: 2, pointRadius: 4, fill: true, tension: 0.4 
             }]
           },
@@ -1274,56 +1276,93 @@ class IMSApp {
             labels: topIngredients.map(i => i[0]),
             datasets: [{
               label: "Quantity Consumed", data: topIngredients.map(i => i[1]),
-              backgroundColor: "#3b82f6", borderRadius: 6, borderSkipped: false
+              backgroundColor: topItemsColors, borderRadius: 6, borderSkipped: false
             }]
           },
           options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { borderDash: [4, 4] } } } }
         });
 
-        this.drawChart("faItemTrendChart", "itemTrend", {
-          type: "line",
-          data: {
-            labels: dates,
-            datasets: [{
-              label: selectedItem, data: itemTrendData, borderColor: "#10b981", 
-              backgroundColor: "rgba(16, 185, 129, 0.1)", borderWidth: 2,
-              pointBackgroundColor: "#ffffff", pointBorderColor: "#10b981",
-              pointRadius: 4, fill: true, tension: 0.4
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { borderDash: [4, 4] } } } }
-        });
+        if (selectedItem !== "all") {
+            this.drawChart("faItemTrendChart", "itemTrend", {
+              type: "line",
+              data: {
+                labels: dates,
+                datasets: [{
+                  label: selectedItem, data: itemTrendData, borderColor: "#ef4444", 
+                  backgroundColor: "rgba(239, 68, 68, 0.1)", borderWidth: 2,
+                  pointBackgroundColor: "#ffffff", pointBorderColor: "#ef4444",
+                  pointRadius: 4, fill: true, tension: 0.4
+                }]
+              },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { borderDash: [4, 4] } } } }
+            });
 
-        const scatterData = filtered.map(l => ({ x: l.customers || 0, y: l.items?.[selectedItem] || 0 }));
+            const scatterData = filtered.map(l => ({ x: l.customers || 0, y: l.items?.[selectedItem] || 0 }));
 
-        this.drawChart("faScatterChart", "scatter", {
-          type: "scatter",
-          data: {
-            datasets: [{
-              label: `Customers vs ${selectedItem}`, data: scatterData,
-              backgroundColor: "rgba(245, 158, 11, 0.7)", borderColor: "#f59e0b",
-              pointRadius: 6, pointHoverRadius: 8
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Customers' }, grid: { display: false } }, y: { title: { display: true, text: 'Qty Consumed' }, beginAtZero: true, grid: { borderDash: [4, 4] } } } }
-        });
+            this.drawChart("faScatterChart", "scatter", {
+              type: "scatter",
+              data: {
+                datasets: [{
+                  label: `Customers vs ${selectedItem}`, data: scatterData,
+                  backgroundColor: "rgba(31, 41, 55, 0.7)", borderColor: "#1f2937",
+                  pointRadius: 6, pointHoverRadius: 8
+                }]
+              },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Customers' }, grid: { display: false } }, y: { title: { display: true, text: 'Qty Consumed' }, beginAtZero: true, grid: { borderDash: [4, 4] } } } }
+            });
+        } else {
+            // Draw empty placeholders if "All Items" is selected
+            this.drawChart("faItemTrendChart", "itemTrend", {
+                type: 'line', data: { labels: [], datasets: [] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Select an ingredient to view trend' } } }
+            });
+            this.drawChart("faScatterChart", "scatter", {
+                type: 'scatter', data: { datasets: [] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Select an ingredient to view correlation' } } }
+            });
+        }
     }
 
-    if (this.fa.tableBody) {
-        this.fa.tableBody.innerHTML = sortedIngredients.length === 0 
-          ? `<tr><td colspan="3" class="text-center text-muted">No data found for this range.</td></tr>`
-          : sortedIngredients.map((item, index) => {
-              const invItem = this.cachedInventory.find(i => i.name === item[0]);
-              const unit = invItem ? invItem.unit : "";
-              return `
-                <tr>
-                  <td><strong>#${index + 1}</strong></td>
-                  <td>${this.escapeHtml(item[0])}</td>
-                  <td><span class="badge badge-info">${this.formatNumber(item[1].toFixed(2))} ${unit}</span></td>
-                </tr>`;
+// FINAL FIX: Render the Top 10 and Least 10 tables
+    if (this.fa.topTableBody && this.fa.leastTableBody) {
+        
+        // ALWAYS show the global Top 10 and Least 10 for the chosen date/branch
+        // (Ignoring the Focus Ingredient dropdown so you maintain full context)
+        const top10 = sortedIngredients.slice(0, 10);
+        const least10 = [...sortedIngredients].slice(-10).reverse(); // Reverse so absolute least is at the top
+
+        const generateHTML = (arr) => {
+            if (arr.length === 0) return `<tr><td colspan="4" class="text-center text-muted">No data found.</td></tr>`;
+            
+            return arr.map((item) => {
+                const name = item[0];
+                const consumed = item[1];
+                const wasted = ingredientWaste[name] || 0;
+                
+                const invItem = this.cachedInventory.find(i => i.name === name);
+                const unit = invItem ? invItem.unit : "";
+                
+                // Get original absolute rank from the full sorted list
+                const rank = sortedIngredients.findIndex(i => i[0] === name) + 1;
+
+                // Highlight the row if it matches the selected focus ingredient!
+                const isFocused = (selectedItem !== "all" && name === selectedItem);
+                const rowBg = isFocused ? 'style="background-color: var(--primary-light);"' : '';
+                
+                return `
+                    <tr ${rowBg}>
+                        <td><strong>#${rank}</strong></td>
+                        <td>${this.escapeHtml(name)}</td>
+                        <td><span class="badge badge-info">${this.formatNumber(consumed.toFixed(2))} ${unit}</span></td>
+                        <td><span class="badge badge-danger">${this.formatNumber(wasted.toFixed(2))} ${unit}</span></td>
+                    </tr>`;
             }).join("");
+        };
+
+        this.fa.topTableBody.innerHTML = generateHTML(top10);
+        this.fa.leastTableBody.innerHTML = generateHTML(least10);
     }
-  }
+  } // <-- This brace closes the renderAnalytics() function
 
   drawChart(canvasId, chartKey, config) {
     const ctx = document.getElementById(canvasId);
@@ -1354,10 +1393,8 @@ class IMSApp {
       timestamp: document.getElementById("reportTimestamp"),
       head: document.getElementById("reportHead"),
       body: document.getElementById("reportBody"),
-      btnPrint: document.getElementById("btnPrintReport"),
       btnExport: document.getElementById("btnExportReport") 
     };
-
 
     if (this.rep.btnExport) {
         this.rep.btnExport.addEventListener("click", () => this.exportReportToCSV());
@@ -1400,7 +1437,8 @@ class IMSApp {
 
       this.rep.outputCard.classList.remove("d-none");
       
-      if (this.rep.btnPrint) this.rep.btnPrint.classList.remove("d-none");
+      const btnPrint = document.getElementById("btnOfficialPrint");
+      if (btnPrint) btnPrint.classList.remove("d-none");
       if (this.rep.btnExport) this.rep.btnExport.classList.remove("d-none"); 
       
       this.showNotification("Report generated successfully.", "success");
