@@ -100,19 +100,40 @@
     </div>
 </div>
 
-<div class="card mb-6">
-    <div class="card-header"><h2 class="card-title">Complete Ingredient Summary</h2></div>
-    <div style="overflow-x: auto;">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Ingredient</th>
-                    <th>Total Consumed</th>
-                    <th>Total Wasted</th>
-                </tr>
-            </thead>
-            <tbody id="faItemsTableBody"></tbody>
-        </table>
+<div class="grid grid-2 mb-6">
+    <div class="card">
+        <div class="card-header"><h2 class="card-title"><i class="fas fa-arrow-trend-up text-success"></i> Top 10 Most Consumed</h2></div>
+        <div style="overflow-x: auto;">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Ingredient</th>
+                        <th>Consumed</th>
+                        <th>Wasted</th>
+                    </tr>
+                </thead>
+                <tbody id="faTopTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h2 class="card-title"><i class="fas fa-arrow-trend-down text-danger"></i> Top 10 Least Consumed</h2></div>
+        <div style="overflow-x: auto;">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Ingredient</th>
+                        <th>Consumed</th>
+                        <th>Wasted</th>
+                    </tr>
+                </thead>
+                <tbody id="faLeastTableBody"></tbody>
+            </table>
+        </div>
     </div>
 </div>
+
 {% endblock %}
