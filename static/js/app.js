@@ -1388,6 +1388,7 @@ class IMSApp {
       branch: document.getElementById("repBranch"),
       startDate: document.getElementById("repStartDate"),
       endDate: document.getElementById("repEndDate"),
+      ingredient: document.getElementById("repIngredient"),
       outputCard: document.getElementById("reportOutputCard"),
       outputTitle: document.getElementById("reportOutputTitle"),
       timestamp: document.getElementById("reportTimestamp"),
@@ -1395,6 +1396,24 @@ class IMSApp {
       body: document.getElementById("reportBody"),
       btnExport: document.getElementById("btnExportReport") 
     };
+
+    // --- Ingredients in report
+    if (this.rep.ingredient) {
+        const uniqueNames = new Set();
+        const sortedIngredients = [];
+        this.cachedInventory.forEach(i => {
+            if (!uniqueNames.has(i.name)) {
+                uniqueNames.add(i.name);
+                sortedIngredients.push(i);
+            }
+        });
+        sortedIngredients.sort((a, b) => a.name.localeCompare(b.name));
+        this.rep.ingredient.innerHTML = `
+            <option value="all" selected>All Ingredients</option>
+            ${sortedIngredients.map(i => `<option value="${this.escapeHtml(i.name)}">${this.escapeHtml(i.name)}</option>`).join("")}
+        `;
+    }
+    // --- END OF NEW BLOCK ---
 
     if (this.rep.btnExport) {
         this.rep.btnExport.addEventListener("click", () => this.exportReportToCSV());
@@ -1411,7 +1430,8 @@ class IMSApp {
       type: this.rep.type.value,
       branch_id: this.rep.branch.value,
       start_date: this.rep.startDate.value,
-      end_date: this.rep.endDate.value
+      end_date: this.rep.endDate.value,
+      ingredient: this.rep.ingredient ? this.rep.ingredient.value : "all"
     };
 
     try {
