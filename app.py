@@ -542,6 +542,7 @@ def api_reset_password():
 # ==========================================
 # API Routes: REPORTS ENGINE
 # ==========================================
+
 @app.route('/reports')
 @login_required
 def reports_page():
@@ -576,11 +577,12 @@ def generate_report():
                 branch_filter = "WHERE branch_id = %s"
                 params.append(int(branch_id))
                 
+            # --- POSTGRES FIX: Changed ? to %s ---
             if requested_ingredient != "all":
                 if branch_filter:
-                    branch_filter += " AND name = ?"
+                    branch_filter += " AND name = %s"
                 else:
-                    branch_filter = "WHERE name = ?"
+                    branch_filter = "WHERE name = %s"
                 params.append(requested_ingredient)
                 
             cur.execute(f"SELECT branch_id, name, unit, stock, min_level, max_level FROM inventory {branch_filter} ORDER BY name", tuple(params))
@@ -609,8 +611,9 @@ def generate_report():
                 date_filter = "AND dl.date >= %s AND dl.date <= %s"
                 params.extend([start_date, end_date])
 
+            # --- POSTGRES FIX: Changed ? to %s ---
             if requested_ingredient != "all":
-                date_filter += " AND dli.ingredient = ?"
+                date_filter += " AND dli.ingredient = %s"
                 params.append(requested_ingredient)
 
             query = f"""
@@ -643,8 +646,9 @@ def generate_report():
                 date_filter = "AND dl.date >= %s AND dl.date <= %s"
                 params.extend([start_date, end_date])
 
+            # --- POSTGRES FIX: Changed ? to %s ---
             if requested_ingredient != "all":
-                date_filter += " AND dli.ingredient = ?"
+                date_filter += " AND dli.ingredient = %s"
                 params.append(requested_ingredient)
 
             query = f"""
