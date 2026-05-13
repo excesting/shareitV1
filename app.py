@@ -555,6 +555,7 @@ def generate_report():
     requested_branch_id = data.get('branch_id')
     start_date = data.get('start_date')
     end_date = data.get('end_date')
+    requested_ingredient = data.get('ingredient', 'all')
     
     user_role = session.get('role')
     user_branch_id = session.get('branch_id')
@@ -574,6 +575,13 @@ def generate_report():
             if branch_id != "all":
                 branch_filter = "WHERE branch_id = %s"
                 params.append(int(branch_id))
+                
+            if requested_ingredient != "all":
+                if branch_filter:
+                    branch_filter += " AND name = ?"
+                else:
+                    branch_filter = "WHERE name = ?"
+                params.append(requested_ingredient)
                 
             cur.execute(f"SELECT branch_id, name, unit, stock, min_level, max_level FROM inventory {branch_filter} ORDER BY name", tuple(params))
             rows = cur.fetchall()
@@ -600,6 +608,10 @@ def generate_report():
             if start_date and end_date:
                 date_filter = "AND dl.date >= %s AND dl.date <= %s"
                 params.extend([start_date, end_date])
+
+            if requested_ingredient != "all":
+                date_filter += " AND dli.ingredient = ?"
+                params.append(requested_ingredient)
 
             query = f"""
                 SELECT dl.date, dl.branch_id, dl.customers, dli.ingredient, dli.qty, i.unit
@@ -630,6 +642,10 @@ def generate_report():
             if start_date and end_date:
                 date_filter = "AND dl.date >= %s AND dl.date <= %s"
                 params.extend([start_date, end_date])
+
+            if requested_ingredient != "all":
+                date_filter += " AND dli.ingredient = ?"
+                params.append(requested_ingredient)
 
             query = f"""
                 SELECT dl.date, dl.branch_id, dli.ingredient, dli.waste, i.unit
