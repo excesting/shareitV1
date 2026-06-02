@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Expiry Tracker{% endblock %}
+{% block page_title %}Expiry Tracker{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <p class="page-hero-subtitle">Track expiry dates per received batch. Each row is one delivery — multiple batches of the same item appear separately so nothing is hidden.</p>
+</div>
+
+<!-- Stats -->
+<div class="grid grid-4 mb-6">
+    <div class="stats-card"><div class="stats-number text-danger" id="etExpired">-</div><div class="stats-label">Expired Batches</div></div>
+    <div class="stats-card"><div class="stats-number text-warning" id="etSoon">-</div><div class="stats-label">Expiring Within 7 Days</div></div>
+    <div class="stats-card"><div class="stats-number text-success" id="etOk">-</div><div class="stats-label">OK (>7 days)</div></div>
+    <div class="stats-card"><div class="stats-number" id="etTotal">-</div><div class="stats-label">Total Tracked Batches</div></div>
+</div>
+
+<!-- Controls -->
+<div class="card mb-6">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-sliders text-primary"></i> Filters</h2>
+    </div>
+    <div class="inventory-controls">
+        <div class="grid grid-4">
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-store"></i> Branch</label>
+                <select id="etBranchFilter" class="form-control">
+                    <option value="all">All Branches</option>
+                    <option value="0">Lipa (Main)</option>
+                    <option value="1">Malvar</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-filter"></i> Expiry Status</label>
+                <select id="etStatusFilter" class="form-control">
+                    <option value="all">All</option>
+                    <option value="expired">Expired</option>
+                    <option value="soon">Expiring Soon (≤7 days)</option>
+                    <option value="ok">OK (&gt;7 days)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-magnifying-glass"></i> Search Item</label>
+                <input id="etSearch" class="form-control" placeholder="Item name or code...">
+            </div>
+            <div class="form-group">
+                <label class="form-label">&nbsp;</label>
+                <a href="/deliveries" class="btn btn-secondary w-full">
+                    <i class="fas fa-truck"></i> Manage Deliveries
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Expired alert banner (shown only when expired batches exist) -->
+<div id="etExpiredBanner" style="display:none; background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:1rem 1.25rem; margin-bottom:1.5rem; display:flex; align-items:center; gap:0.75rem;">
+    <i class="fas fa-circle-exclamation" style="color:#ef4444; font-size:1.3rem;"></i>
+    <div>
+        <strong style="color:#991b1b;">You have expired batches in stock.</strong>
+        <span style="color:#b91c1c; margin-left:0.4rem;">Remove or dispose of these items immediately to prevent food safety issues.</span>
+    </div>
+</div>
+
+<!-- Batch Table -->
+<div class="card mb-6">
+    <div class="table-container">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Batch Code</th>
+                    <th>Branch</th>
+                    <th>Inventory Code</th>
+                    <th>Item Name</th>
+                    <th>Supplier</th>
+                    <th>Batch Qty Received</th>
+                    <th>Date Received</th>
+                    <th>Expiry Date</th>
+                    <th>Days Left</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="etTableBody"></tbody>
+        </table>
+    </div>
+    <div id="etEmptyState" class="text-center p-6 d-none">
+        <i class="fas fa-calendar-check fa-3x text-success mb-3"></i>
+        <h3 class="text-success">No expiry data yet</h3>
+        <p class="text-muted">Expiry dates are recorded when you confirm receipt of a delivery. <a href="/deliveries">Go to Deliveries →</a></p>
+    </div>
+</div>
+
+<!-- Per-item summary card -->
+<div class="card mb-6" id="etSummaryCard" style="display:none;">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-layer-group text-primary"></i> Summary by Item</h2>
+        <p style="color:#64748b; font-size:0.85rem; margin:0;">Earliest expiry per item — tells you which item needs to be used first.</p>
+    </div>
+    <div class="table-container">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Branch</th>
+                    <th>Item Name</th>
+                    <th>Active Batches</th>
+                    <th>Earliest Expiry</th>
+                    <th>Total Qty in Batches</th>
+                    <th>Urgency</th>
+                </tr>
+            </thead>
+            <tbody id="etSummaryBody"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TODAY = new Date().toISOString().split('T')[0];
+const SOON  = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+let allBatches = [];
+
+const branchName = id => parseInt(id) === 1 ? 'Malvar' : 'Lipa';
+
+function daysLeft(expiry) {
+    const diff = Math.ceil((new Date(expiry) - new Date(TODAY)) / 86400000);
+    return diff;
+}
+
+function statusBadge(status) {
+    if (status === 'expired') return `<span class="badge badge-danger"><i class="fas fa-circle-exclamation"></i> Expired</span>`;
+    if (status === 'soon')    return `<span class="badge badge-warning"><i class="fas fa-triangle-exclamation"></i> Expiring Soon</span>`;
+    return `<span class="badge badge-success"><i class="fas fa-circle-check"></i> OK</span>`;
+}
+
+function daysLeftCell(expiry, status) {
+    const d = daysLeft(expiry);
+    if (status === 'expired') return `<span style="color:#ef4444; font-weight:700;">${Math.abs(d)} day${Math.abs(d)===1?'':'s'} ago</span>`;
+    if (status === 'soon')    return `<span style="color:#f59e0b; font-weight:700;">${d} day${d===1?'':'s'}</span>`;
+    return `<span style="color:#374151;">${d} days</span>`;
+}
+
+function updateStats(data) {
+    const expired = data.filter(b => b.expiry_status === 'expired').length;
+    const soon    = data.filter(b => b.expiry_status === 'soon').length;
+    const ok      = data.filter(b => b.expiry_status === 'ok').length;
+    document.getElementById('etExpired').textContent = expired;
+    document.getElementById('etSoon').textContent    = soon;
+    document.getElementById('etOk').textContent      = ok;
+    document.getElementById('etTotal').textContent   = data.length;
+
+    const banner = document.getElementById('etExpiredBanner');
+    banner.style.display = expired > 0 ? 'flex' : 'none';
+}
+
+function renderTable(data) {
+    const tbody = document.getElementById('etTableBody');
+    const empty = document.getElementById('etEmptyState');
+    updateStats(allBatches); // stats always show full set
+
+    if (!data.length) {
+        tbody.innerHTML = '';
+        empty.classList.remove('d-none');
+        document.getElementById('etSummaryCard').style.display = 'none';
+        return;
+    }
+    empty.classList.add('d-none');
+    document.getElementById('etSummaryCard').style.display = '';
+
+    const rowBg = { expired: 'background:#fff1f2;', soon: 'background:#fffbeb;', ok: '' };
+
+    tbody.innerHTML = data.map(b => {
+        const batchCell = b.batch_code
+            ? `<code style="background:#ede9fe;color:#5b21b6;padding:2px 7px;border-radius:4px;font-size:0.78rem;white-space:nowrap;">${b.batch_code}</code>`
+            : `<span style="color:#9ca3af;">—</span>`;
+        const code = b.inventory_id
+            ? `<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:0.78rem;color:#475569;">${b.inventory_id}</code>`
+            : `<span style="color:#9ca3af;">—</span>`;
+        const receivedDate = b.received_at ? b.received_at.split('T')[0] : '—';
+        const qty = b.received_quantity ?? b.quantity;
+
+        return `<tr style="${rowBg[b.expiry_status] || ''}">
+            <td>${batchCell}</td>
+            <td>${branchName(b.branch_id)}</td>
+            <td>${code}</td>
+            <td><strong>${b.item_name}</strong></td>
+            <td>${b.supplier || '<span style="color:#9ca3af">—</span>'}</td>
+            <td>${qty} ${b.unit}</td>
+            <td>${receivedDate}</td>
+            <td><strong>${b.expiry_date}</strong></td>
+            <td>${daysLeftCell(b.expiry_date, b.expiry_status)}</td>
+            <td>${statusBadge(b.expiry_status)}</td>
+        </tr>`;
+    }).join('');
+
+    renderSummary(allBatches);
+}
+
+function renderSummary(data) {
+    // Group by branch + item_name, find earliest expiry per group
+    const groups = {};
+    data.forEach(b => {
+        const key = `${b.branch_id}||${b.item_name}`;
+        if (!groups[key]) groups[key] = { branch_id: b.branch_id, item_name: b.item_name, batches: [], total_qty: 0, unit: b.unit };
+        groups[key].batches.push(b);
+        groups[key].total_qty += parseFloat(b.received_quantity ?? b.quantity ?? 0);
+    });
+
+    const rows = Object.values(groups).sort((a, b) => {
+        const aEarliest = a.batches.map(x => x.expiry_date).sort()[0];
+        const bEarliest = b.batches.map(x => x.expiry_date).sort()[0];
+        return aEarliest.localeCompare(bEarliest);
+    });
+
+    document.getElementById('etSummaryBody').innerHTML = rows.map(g => {
+        const earliest = g.batches.map(x => x.expiry_date).sort()[0];
+        const status   = earliest < TODAY ? 'expired' : (earliest <= SOON ? 'soon' : 'ok');
+        const bId      = parseInt(g.branch_id);
+        const badge    = bId === 1
+            ? '<span class="badge" style="background:#64748b;color:white;">Malvar</span>'
+            : '<span class="badge" style="background:#3b82f6;color:white;">Lipa</span>';
+        return `<tr>
+            <td>${badge}</td>
+            <td><strong>${g.item_name}</strong></td>
+            <td>${g.batches.length}</td>
+            <td><strong>${earliest}</strong> ${daysLeftCell(earliest, status)}</td>
+            <td>${g.total_qty.toFixed(2)} ${g.unit}</td>
+            <td>${statusBadge(status)}</td>
+        </tr>`;
+    }).join('');
+}
+
+function applyFilters() {
+    const branch = document.getElementById('etBranchFilter').value;
+    const status = document.getElementById('etStatusFilter').value;
+    const q      = document.getElementById('etSearch').value.toLowerCase().trim();
+
+    const filtered = allBatches.filter(b => {
+        if (branch !== 'all' && b.branch_id != branch) return false;
+        if (status !== 'all' && b.expiry_status !== status) return false;
+        if (q && !b.item_name.toLowerCase().includes(q) && !(b.inventory_id || '').toLowerCase().includes(q)) return false;
+        return true;
+    });
+    renderTable(filtered);
+}
+
+function loadBatches() {
+    fetch('/api/expiry-batches').then(r => r.json()).then(data => {
+        if (data.success) {
+            allBatches = data.batches;
+            applyFilters();
+        }
+    });
+}
+
+['etBranchFilter', 'etStatusFilter'].forEach(id => document.getElementById(id).addEventListener('change', applyFilters));
+document.getElementById('etSearch').addEventListener('input', applyFilters);
+
+loadBatches();
+</script>
+{% endblock %}

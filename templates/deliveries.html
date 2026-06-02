@@ -1,0 +1,491 @@
+{% extends "base.html" %}
+
+{% block title %}Deliveries{% endblock %}
+{% block page_title %}Deliveries{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <p class="page-hero-subtitle">Schedule and track incoming deliveries. Marking a delivery as received automatically updates the linked inventory stock.</p>
+</div>
+
+<!-- Stats Row -->
+<div class="grid grid-4 mb-6">
+    <div class="stats-card"><div class="stats-number" id="dlvTotal">-</div><div class="stats-label">Total Deliveries</div></div>
+    <div class="stats-card"><div class="stats-number text-warning" id="dlvPending">-</div><div class="stats-label">Pending</div></div>
+    <div class="stats-card"><div class="stats-number text-success" id="dlvReceived">-</div><div class="stats-label">Received</div></div>
+    <div class="stats-card"><div class="stats-number text-danger" id="dlvOverdue">-</div><div class="stats-label">Overdue</div></div>
+</div>
+
+<!-- Controls -->
+<div class="card mb-6">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-sliders text-primary"></i> Delivery Controls</h2>
+    </div>
+    <div class="inventory-controls">
+        <div class="grid grid-4">
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-store"></i> Branch</label>
+                <select id="dlvBranchFilter" class="form-control">
+                    <option value="all">All Branches</option>
+                    <option value="0">Lipa (Main)</option>
+                    <option value="1">Malvar</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-filter"></i> Status</label>
+                <select id="dlvStatusFilter" class="form-control">
+                    <option value="all">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="overdue">Overdue</option>
+                    <option value="received">Received</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-magnifying-glass"></i> Search</label>
+                <input id="dlvSearch" class="form-control" placeholder="Item name, code, or supplier...">
+            </div>
+            <div class="form-group">
+                <label class="form-label">&nbsp;</label>
+                <button id="btnAddDelivery" class="btn btn-primary w-full"><i class="fas fa-plus"></i> Schedule Delivery</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Table -->
+<div class="card mb-6">
+    <div class="table-container">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Batch Code</th>
+                    <th>Branch</th>
+                    <th>Inventory Code</th>
+                    <th>Item Name</th>
+                    <th>Supplier</th>
+                    <th>Scheduled Qty</th>
+                    <th>Expected Date</th>
+                    <th>Expiry Date</th>
+                    <th>Status</th>
+                    <th>Received Qty / Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="deliveryTableBody"></tbody>
+        </table>
+    </div>
+    <div id="deliveryEmptyState" class="text-center p-6 d-none">
+        <i class="fas fa-truck fa-3x text-info mb-3"></i>
+        <h3 class="text-info">No deliveries found</h3>
+        <p class="text-muted">Schedule a delivery to start tracking.</p>
+    </div>
+</div>
+
+<!-- ===================== Schedule / Edit Modal ===================== -->
+<div id="deliveryModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; padding:2rem; width:100%; max-width:560px; box-shadow:0 20px 60px rgba(0,0,0,0.2); max-height:90vh; overflow-y:auto;">
+        <h3 id="modalTitle" style="margin-bottom:1.5rem; color:#1e293b; font-size:1.1rem; font-weight:700;">Schedule Delivery</h3>
+
+        <input type="hidden" id="editDeliveryId">
+
+        <!-- Branch + Date -->
+        <div class="grid grid-2" style="gap:1rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label class="form-label">Branch <span style="color:#ef4444">*</span></label>
+                <select id="modalBranch" class="form-control">
+                    <option value="0">Lipa (Main)</option>
+                    <option value="1">Malvar</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Expected Delivery Date <span style="color:#ef4444">*</span></label>
+                <input type="date" id="modalDate" class="form-control">
+            </div>
+        </div>
+
+        <!-- Inventory Item Picker -->
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label class="form-label">Inventory Item <span style="color:#ef4444">*</span></label>
+            <select id="modalInventorySelect" class="form-control">
+                <option value="">— Select an inventory item —</option>
+            </select>
+        </div>
+
+        <!-- Code + Unit (auto-filled, read-only) -->
+        <div class="grid grid-2" style="gap:1rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label class="form-label">Inventory Code</label>
+                <input type="text" id="modalInventoryCode" class="form-control" readonly
+                    style="background:#f8fafc; color:#64748b; cursor:not-allowed;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Unit</label>
+                <input type="text" id="modalUnit" class="form-control" readonly
+                    style="background:#f8fafc; color:#64748b; cursor:not-allowed;">
+            </div>
+        </div>
+
+        <!-- Supplier + Quantity -->
+        <div class="grid grid-2" style="gap:1rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label class="form-label">Supplier</label>
+                <input type="text" id="modalSupplier" class="form-control" placeholder="Supplier name">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Scheduled Quantity <span style="color:#ef4444">*</span></label>
+                <input type="number" id="modalQty" class="form-control" min="0" step="0.01" placeholder="0">
+            </div>
+        </div>
+
+        <!-- Expiry Date -->
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label class="form-label"><i class="fas fa-calendar-xmark" style="color:#ef4444;"></i> Expiration Date</label>
+            <input type="date" id="modalExpiry" class="form-control">
+            <small style="color:#94a3b8; font-size:0.78rem;">Optional. You will be asked to enter this again when confirming receipt — that is the recommended time since you can read it off the packaging.</small>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem;">
+            <label class="form-label">Notes</label>
+            <textarea id="modalNotes" class="form-control" rows="2" placeholder="Optional notes..."></textarea>
+        </div>
+
+        <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+            <button id="btnCancelModal" class="btn btn-secondary">Cancel</button>
+            <button id="btnSaveDelivery" class="btn btn-primary"><i class="fas fa-save"></i> Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== Confirm Receive Modal ===================== -->
+<div id="receiveModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2100; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; padding:2rem; width:100%; max-width:440px; box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+        <h3 style="margin-bottom:0.5rem; color:#1e293b; font-size:1.05rem; font-weight:700;">
+            <i class="fas fa-boxes-stacking text-success"></i> Confirm Receipt
+        </h3>
+        <p style="color:#64748b; font-size:0.875rem; margin-bottom:1.25rem;">
+            Fill in the details from the actual delivery for
+            <strong id="rcvItemName" style="color:#1e293b;"></strong>.
+        </p>
+
+        <input type="hidden" id="rcvDeliveryId">
+
+        <div class="form-group" style="margin-bottom:0.75rem;">
+            <label class="form-label">Scheduled Quantity</label>
+            <input type="text" id="rcvScheduledQty" class="form-control" readonly
+                style="background:#f8fafc; color:#64748b; cursor:not-allowed;">
+        </div>
+
+        <div class="form-group" style="margin-bottom:0.75rem;">
+            <label class="form-label">Actual Received Quantity <span style="color:#ef4444">*</span></label>
+            <input type="number" id="rcvActualQty" class="form-control" min="0" step="0.01">
+        </div>
+
+        <!-- Expiry date entered at receipt time, read off the packaging -->
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label class="form-label">
+                <i class="fas fa-calendar-xmark" style="color:#ef4444;"></i>
+                Expiration Date <span style="color:#94a3b8; font-weight:400;">(from packaging)</span>
+            </label>
+            <input type="date" id="rcvExpiryDate" class="form-control">
+            <small style="color:#94a3b8; font-size:0.78rem;">
+                Check the label when the goods arrive and enter the date here. This will be saved to both the delivery record and the linked inventory item.
+            </small>
+        </div>
+
+        <div id="rcvStockNote" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:0.75rem 1rem; margin-bottom:1.25rem; font-size:0.82rem; color:#166534; display:none;">
+            <i class="fas fa-circle-check"></i> Current stock: <strong id="rcvCurrentStock"></strong> — will become <strong id="rcvNewStock"></strong>
+        </div>
+
+        <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+            <button id="btnCancelReceive" class="btn btn-secondary">Cancel</button>
+            <button id="btnConfirmReceive" class="btn btn-success"><i class="fas fa-check"></i> Confirm Receipt</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TODAY = new Date().toISOString().split('T')[0];
+const SOON  = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]; // 7 days from now
+let allDeliveries = [];
+let allInventory = [];  // all items across branches
+
+const branchName = id => parseInt(id) === 1 ? 'Malvar' : 'Lipa';
+
+function expiryBadge(expiry) {
+    if (!expiry) return `<span style="color:#9ca3af;">—</span>`;
+    if (expiry < TODAY)  return `<span style="color:#ef4444;font-weight:600;"><i class="fas fa-circle-exclamation"></i> ${expiry}<br><small>Expired</small></span>`;
+    if (expiry <= SOON)  return `<span style="color:#f59e0b;font-weight:600;"><i class="fas fa-triangle-exclamation"></i> ${expiry}<br><small>Expires soon</small></span>`;
+    return `<span style="color:#374151;">${expiry}</span>`;
+}
+
+function statusBadge(status, expectedDate) {
+    if (status === 'pending' && expectedDate < TODAY)
+        return `<span class="badge badge-danger">Overdue</span>`;
+    if (status === 'received')
+        return `<span class="badge badge-success">Received</span>`;
+    if (status === 'cancelled')
+        return `<span class="badge" style="background:#e5e7eb;color:#374151;">Cancelled</span>`;
+    return `<span class="badge badge-warning">Pending</span>`;
+}
+
+function updateStats(data) {
+    document.getElementById('dlvTotal').textContent    = data.length;
+    document.getElementById('dlvPending').textContent  = data.filter(d => d.status === 'pending' && d.expected_date >= TODAY).length;
+    document.getElementById('dlvReceived').textContent = data.filter(d => d.status === 'received').length;
+    document.getElementById('dlvOverdue').textContent  = data.filter(d => d.status === 'pending' && d.expected_date < TODAY).length;
+}
+
+function renderTable(data) {
+    const tbody = document.getElementById('deliveryTableBody');
+    const empty = document.getElementById('deliveryEmptyState');
+    updateStats(allDeliveries); // stats always reflect full set
+
+    if (!data.length) {
+        tbody.innerHTML = '';
+        empty.classList.remove('d-none');
+        return;
+    }
+    empty.classList.add('d-none');
+
+    tbody.innerHTML = data.map(d => {
+        const overdue = d.status === 'pending' && d.expected_date < TODAY;
+        const rowStyle = overdue ? 'background:#fff7f7;' : '';
+        const codeCell = d.inventory_id
+            ? `<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:0.78rem;color:#475569;">${d.inventory_id}</code>`
+            : `<span style="color:#9ca3af;">—</span>`;
+
+        const rcvInfo = d.status === 'received'
+            ? `<span style="color:#059669;font-weight:600;">${d.received_quantity ?? d.quantity} ${d.unit}</span><br>
+               <span style="color:#94a3b8;font-size:0.75rem;">${d.received_at ? d.received_at.split('T')[0] : ''}</span>`
+            : `<span style="color:#9ca3af;">—</span>`;
+
+        const actions = [];
+        if (d.status === 'pending') {
+            actions.push(`<button class="btn btn-success btn-sm" onclick="openReceiveModal(${d.id})" title="Mark as Received"><i class="fas fa-check"></i></button>`);
+            actions.push(`<button class="btn btn-secondary btn-sm" onclick="cancelDelivery(${d.id})" title="Cancel"><i class="fas fa-ban"></i></button>`);
+        }
+        actions.push(`<button class="btn btn-primary btn-sm" onclick="openEdit(${d.id})" title="Edit"><i class="fas fa-pen"></i></button>`);
+        actions.push(`<button class="btn btn-danger btn-sm" onclick="deleteDelivery(${d.id})" title="Delete"><i class="fas fa-trash"></i></button>`);
+
+        const expiryHighlight = d.expiry_date && d.expiry_date < TODAY ? 'background:#fff1f2;' : (d.expiry_date && d.expiry_date <= SOON ? 'background:#fffbeb;' : '');
+        const batchCell = d.batch_code
+            ? `<code style="background:#ede9fe;color:#5b21b6;padding:2px 7px;border-radius:4px;font-size:0.78rem;white-space:nowrap;">${d.batch_code}</code>`
+            : `<span style="color:#9ca3af;">—</span>`;
+
+        return `<tr style="${rowStyle || expiryHighlight}">
+            <td>${batchCell}</td>
+            <td>${branchName(d.branch_id)}</td>
+            <td>${codeCell}</td>
+            <td><strong>${d.item_name}</strong></td>
+            <td>${d.supplier || '<span style="color:#9ca3af">—</span>'}</td>
+            <td>${d.quantity} ${d.unit}</td>
+            <td>${d.expected_date}</td>
+            <td>${expiryBadge(d.expiry_date)}</td>
+            <td>${statusBadge(d.status, d.expected_date)}</td>
+            <td>${rcvInfo}</td>
+            <td><div style="display:flex;gap:0.35rem;">${actions.join('')}</div></td>
+        </tr>`;
+    }).join('');
+}
+
+function applyFilters() {
+    const branch = document.getElementById('dlvBranchFilter').value;
+    const status = document.getElementById('dlvStatusFilter').value;
+    const q = document.getElementById('dlvSearch').value.toLowerCase().trim();
+
+    const filtered = allDeliveries.filter(d => {
+        if (branch !== 'all' && d.branch_id != branch) return false;
+        const overdue = d.status === 'pending' && d.expected_date < TODAY;
+        if (status === 'pending'   && (d.status !== 'pending' || overdue)) return false;
+        if (status === 'overdue'   && !overdue)                             return false;
+        if (status === 'received'  && d.status !== 'received')              return false;
+        if (status === 'cancelled' && d.status !== 'cancelled')             return false;
+        if (q && !d.item_name.toLowerCase().includes(q)
+              && !(d.inventory_id || '').toLowerCase().includes(q)
+              && !(d.supplier || '').toLowerCase().includes(q)) return false;
+        return true;
+    });
+    renderTable(filtered);
+}
+
+function loadDeliveries() {
+    fetch('/api/deliveries').then(r => r.json()).then(data => {
+        if (data.success) { allDeliveries = data.deliveries; applyFilters(); }
+    });
+}
+
+// ── Inventory dropdown ─────────────────────────────────────────────
+function populateInventoryDropdown(selectEl, selectedId) {
+    selectEl.innerHTML = '<option value="">— Select an inventory item —</option>';
+    allInventory.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.id;
+        opt.textContent = `[${item.id}] ${item.name} (${branchName(item.branch_id)})`;
+        opt.dataset.unit = item.unit;
+        opt.dataset.stock = item.stock;
+        if (item.id === selectedId) opt.selected = true;
+        selectEl.appendChild(opt);
+    });
+}
+
+function onInventoryChange() {
+    const sel = document.getElementById('modalInventorySelect');
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('modalInventoryCode').value = opt.value || '';
+    document.getElementById('modalUnit').value = opt.dataset.unit || '';
+}
+
+// ── Schedule / Edit modal ─────────────────────────────────────────
+function openModal(delivery = null) {
+    document.getElementById('editDeliveryId').value = delivery ? delivery.id : '';
+    document.getElementById('modalTitle').textContent = delivery ? 'Edit Delivery' : 'Schedule Delivery';
+    document.getElementById('modalBranch').value      = delivery ? delivery.branch_id : '0';
+    document.getElementById('modalDate').value        = delivery ? delivery.expected_date : TODAY;
+    document.getElementById('modalSupplier').value    = delivery ? (delivery.supplier || '') : '';
+    document.getElementById('modalQty').value         = delivery ? delivery.quantity : '';
+    document.getElementById('modalExpiry').value      = delivery ? (delivery.expiry_date || '') : '';
+    document.getElementById('modalNotes').value       = delivery ? (delivery.notes || '') : '';
+
+    populateInventoryDropdown(document.getElementById('modalInventorySelect'), delivery ? delivery.inventory_id : null);
+    onInventoryChange();
+
+    // If editing, override code/unit from saved values
+    if (delivery) {
+        document.getElementById('modalInventoryCode').value = delivery.inventory_id || '';
+        document.getElementById('modalUnit').value = delivery.unit || '';
+    }
+
+    document.getElementById('deliveryModal').style.display = 'flex';
+}
+
+function openEdit(id) {
+    const d = allDeliveries.find(x => x.id === id);
+    if (d) openModal(d);
+}
+
+function closeModal() { document.getElementById('deliveryModal').style.display = 'none'; }
+
+document.getElementById('btnAddDelivery').addEventListener('click', () => openModal());
+document.getElementById('btnCancelModal').addEventListener('click', closeModal);
+document.getElementById('deliveryModal').addEventListener('click', e => { if (e.target === document.getElementById('deliveryModal')) closeModal(); });
+document.getElementById('modalInventorySelect').addEventListener('change', onInventoryChange);
+
+document.getElementById('btnSaveDelivery').addEventListener('click', () => {
+    const id        = document.getElementById('editDeliveryId').value;
+    const invId     = document.getElementById('modalInventorySelect').value;
+    const invName   = document.getElementById('modalInventorySelect').selectedOptions[0]?.text || '';
+    const cleanName = invId ? invName.replace(/^\[.*?\]\s*/, '').replace(/\s*\(.*?\)$/, '') : '';
+
+    const payload = {
+        branch_id:    document.getElementById('modalBranch').value,
+        inventory_id: invId || null,
+        item_name:    cleanName || document.getElementById('modalInventoryCode').value || 'Unknown',
+        supplier:     document.getElementById('modalSupplier').value.trim(),
+        quantity:     document.getElementById('modalQty').value,
+        unit:         document.getElementById('modalUnit').value.trim(),
+        expected_date:document.getElementById('modalDate').value,
+        expiry_date:  document.getElementById('modalExpiry').value || null,
+        notes:        document.getElementById('modalNotes').value.trim()
+    };
+
+    if (!invId || !payload.quantity || !payload.expected_date) {
+        alert('Please select an inventory item, quantity, and expected date.');
+        return;
+    }
+
+    const url    = id ? `/api/deliveries/${id}` : '/api/deliveries';
+    const method = id ? 'PATCH' : 'POST';
+    fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+        .then(r => r.json()).then(d => {
+            if (d.success) { closeModal(); loadDeliveries(); }
+            else alert(d.error);
+        });
+});
+
+// ── Confirm Receive modal ─────────────────────────────────────────
+function openReceiveModal(id) {
+    const d = allDeliveries.find(x => x.id === id);
+    if (!d) return;
+
+    document.getElementById('rcvDeliveryId').value     = d.id;
+    document.getElementById('rcvItemName').textContent = d.item_name;
+    document.getElementById('rcvScheduledQty').value   = `${d.quantity} ${d.unit}`;
+    document.getElementById('rcvActualQty').value      = d.quantity;
+    // Pre-fill expiry from delivery record if already set, otherwise blank so staff reads label
+    document.getElementById('rcvExpiryDate').value     = d.expiry_date || '';
+
+    // Show current stock preview if linked
+    const inv = allInventory.find(i => i.id === d.inventory_id);
+    const note = document.getElementById('rcvStockNote');
+    if (inv) {
+        document.getElementById('rcvCurrentStock').textContent = `${inv.stock} ${inv.unit}`;
+        document.getElementById('rcvNewStock').textContent     = `${(parseFloat(inv.stock) + parseFloat(d.quantity)).toFixed(2)} ${inv.unit}`;
+        note.style.display = 'block';
+    } else {
+        note.style.display = 'none';
+    }
+
+    // Update stock preview as quantity is changed
+    document.getElementById('rcvActualQty').oninput = function() {
+        if (inv) {
+            const newVal = (parseFloat(inv.stock) + (parseFloat(this.value) || 0)).toFixed(2);
+            document.getElementById('rcvNewStock').textContent = `${newVal} ${inv.unit}`;
+        }
+    };
+
+    document.getElementById('receiveModal').style.display = 'flex';
+}
+
+function closeReceiveModal() { document.getElementById('receiveModal').style.display = 'none'; }
+
+document.getElementById('btnCancelReceive').addEventListener('click', closeReceiveModal);
+document.getElementById('receiveModal').addEventListener('click', e => { if (e.target === document.getElementById('receiveModal')) closeReceiveModal(); });
+
+document.getElementById('btnConfirmReceive').addEventListener('click', () => {
+    const id     = document.getElementById('rcvDeliveryId').value;
+    const qty    = parseFloat(document.getElementById('rcvActualQty').value);
+    const expiry = document.getElementById('rcvExpiryDate').value || null;
+    if (!qty || qty <= 0) { alert('Please enter a valid received quantity.'); return; }
+
+    fetch(`/api/deliveries/${id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: 'received', received_quantity: qty, expiry_date: expiry })
+    }).then(r => r.json()).then(d => {
+        if (d.success) {
+            closeReceiveModal();
+            loadDeliveries();
+            // Refresh local inventory cache so stock preview stays accurate
+            fetch('/api/inventory').then(r => r.json()).then(inv => { if (inv.success) allInventory = inv.items; });
+        } else alert(d.error);
+    });
+});
+
+// ── Other actions ─────────────────────────────────────────────────
+function cancelDelivery(id) {
+    if (!confirm('Cancel this delivery?')) return;
+    fetch(`/api/deliveries/${id}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({status: 'cancelled'})
+    }).then(r => r.json()).then(d => { if (d.success) loadDeliveries(); else alert(d.error); });
+}
+
+function deleteDelivery(id) {
+    if (!confirm('Delete this delivery record?')) return;
+    fetch(`/api/deliveries/${id}`, {method:'DELETE'})
+        .then(r => r.json()).then(d => { if (d.success) loadDeliveries(); else alert(d.error); });
+}
+
+['dlvBranchFilter','dlvStatusFilter'].forEach(id => document.getElementById(id).addEventListener('change', applyFilters));
+document.getElementById('dlvSearch').addEventListener('input', applyFilters);
+
+// ── Bootstrap ─────────────────────────────────────────────────────
+fetch('/api/inventory').then(r => r.json()).then(data => {
+    if (data.success) allInventory = data.items;
+    loadDeliveries();
+});
+</script>
+{% endblock %}
