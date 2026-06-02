@@ -119,7 +119,8 @@ class IMSApp {
         this.cachedInventory = data.items.map(item => ({
           id: item.id, branch_id: item.branch_id, name: item.name, unit: item.unit,
           stock: Number(item.stock), min: Number(item.min_level), max: Number(item.max_level),
-          reorder_model: item.reorder_model || "rop", updatedAt: item.updated_at
+          reorder_model: item.reorder_model || "rop", updatedAt: item.updated_at,
+          expiry_date: item.expiry_date || null
         }));
       }
     } catch (e) { console.error("Failed to fetch inventory", e); }
@@ -146,6 +147,8 @@ class IMSApp {
         document.getElementById("dashLowStock").textContent = this.formatNumber(data.stats.lowStockCount);
         document.getElementById("dashOutOfStock").textContent = this.formatNumber(data.stats.outOfStockCount);
         document.getElementById("dashTotalLogs").textContent = this.formatNumber(data.stats.totalLogs);
+        const nearExpiryEl = document.getElementById("nearExpiryCount");
+        if (nearExpiryEl) nearExpiryEl.textContent = this.formatNumber(data.stats.nearExpiry ?? 0);
       }
     } catch (e) { console.error("Failed to load dashboard stats", e); }
   }
@@ -175,6 +178,7 @@ class IMSApp {
       fieldStock: document.getElementById("invStock"),
       fieldMin: document.getElementById("invMin"),
       fieldMax: document.getElementById("invMax"),
+      fieldExpiry: document.getElementById("invExpiry"),
       reorderBody: document.getElementById("reorderTableBody"),
       btnRefreshReorder: document.getElementById("btnRefreshReorder"),
       stats: {
@@ -279,7 +283,8 @@ class IMSApp {
     this.inv.fieldStock.value = isEdit ? (item.stock || 0) : 0;
     this.inv.fieldMin.value = isEdit ? (item.min || 0) : 0;
     this.inv.fieldMax.value = isEdit ? (item.max || 0) : 0;
-    
+    if (this.inv.fieldExpiry) this.inv.fieldExpiry.value = isEdit ? (item.expiry_date || "") : "";
+
     this.inv.modal.classList.remove("d-none");
     this.inv.modal.setAttribute("aria-hidden", "false");
   }
@@ -299,6 +304,7 @@ class IMSApp {
     const stock = parseFloat(this.inv.fieldStock.value);
     const min = parseFloat(this.inv.fieldMin.value);
     const max = parseFloat(this.inv.fieldMax.value);
+    const expiry_date = this.inv.fieldExpiry?.value || null;
 
     if (!name) return this.showNotification("Item name is required.", "error");
 
@@ -306,7 +312,7 @@ class IMSApp {
       this.showLoading(this.inv.form);
       const res = await fetch("/api/inventory", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, branch_id, name, unit, stock, min, max, reorder_model })
+        body: JSON.stringify({ id, branch_id, name, unit, stock, min, max, reorder_model, expiry_date })
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
@@ -362,18 +368,32 @@ class IMSApp {
 
     if (this.inv.emptyState) this.inv.emptyState.classList.toggle("d-none", view.length !== 0);
 
+    const today = new Date().toISOString().split('T')[0];
+    const soon  = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+
     this.inv.tableBody.innerHTML = view.map((item) => {
       const isLow = item.stock <= item.min && item.stock > 0;
       const isOut = item.stock <= 0;
       let statusClass = "";
       if (isOut) statusClass = "text-danger font-bold";
       else if (isLow) statusClass = "text-warning font-bold";
-      
+
       const bId = Number(item.branch_id);
-      const branchBadge = bId === 1 
+      const branchBadge = bId === 1
         ? '<span class="badge" style="background-color: #64748b; color: white;">Malvar</span>'
         : '<span class="badge" style="background-color: #3b82f6; color: white;">Lipa</span>';
 
+      let expiryCell = '<span style="color:#9ca3af;">—</span>';
+      if (item.expiry_date) {
+        if (item.expiry_date < today)
+          expiryCell = `<span style="color:#ef4444;font-weight:600;"><i class="fas fa-circle-exclamation"></i> ${item.expiry_date} <small>Expired</small></span>`;
+        else if (item.expiry_date <= soon)
+          expiryCell = `<span style="color:#f59e0b;font-weight:600;"><i class="fas fa-triangle-exclamation"></i> ${item.expiry_date} <small>Soon</small></span>`;
+        else
+          expiryCell = `<span style="color:#374151;">${item.expiry_date}</span>`;
+      }
+
+      const expiryArg = item.expiry_date ? `'${item.expiry_date}'` : 'null';
       return `
       <tr>
         <td>${branchBadge}</td>
@@ -382,9 +402,10 @@ class IMSApp {
         <td class="${statusClass}">${item.stock.toFixed(2)}</td>
         <td>${item.min.toFixed(2)}</td>
         <td>${item.max ?? 0}</td>
+        <td>${expiryCell}</td>
         <td>
           <div class="table-actions">
-            <button class="btn btn-xs btn-secondary" onclick="window.app.openInventoryModal({id:'${item.id}', branch_id:${item.branch_id}, name:'${this.escapeHtml(item.name)}', unit:'${item.unit}', stock:${item.stock}, min:${item.min}, max:${item.max}, reorder_model:'${item.reorder_model || "rop"}'})"><i class="fas fa-pen"></i></button>
+            <button class="btn btn-xs btn-secondary" onclick="window.app.openInventoryModal({id:'${item.id}', branch_id:${item.branch_id}, name:'${this.escapeHtml(item.name)}', unit:'${item.unit}', stock:${item.stock}, min:${item.min}, max:${item.max}, reorder_model:'${item.reorder_model || "rop"}', expiry_date:${expiryArg}})"><i class="fas fa-pen"></i></button>
             <button class="btn btn-xs btn-danger" onclick="window.app.deleteInventoryItemViaApi('${item.id}')"><i class="fas fa-trash"></i></button>
           </div>
         </td>
