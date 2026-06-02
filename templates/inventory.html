@@ -53,7 +53,7 @@
 <div class="card mb-6">
   <div class="table-container">
     <table class="table">
-      <thead><tr><th>Branch</th><th>Product Name</th><th>Unit</th><th>Current Stock</th><th>Min Level</th><th>Max Level</th><th>Action</th></tr></thead>
+      <thead><tr><th>Branch</th><th>Product Name</th><th>Unit</th><th>Current Stock</th><th>Min Level</th><th>Max Level</th><th>Expiry Date</th><th>Action</th></tr></thead>
       <tbody id="inventoryTableBody"></tbody>
     </table>
   </div>
@@ -188,6 +188,11 @@
         <div class="form-group">
           <label class="form-label" for="invMax">Max Level (Capacity)</label>
           <input id="invMax" type="number" class="form-control" min="0" step="0.01" required />
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label" for="invExpiry"><i class="fas fa-calendar-xmark" style="color:#ef4444;"></i> Expiration Date</label>
+          <input id="invExpiry" type="date" class="form-control" />
+          <small class="text-muted text-xs">Leave blank if not applicable. Updated automatically when a delivery is received.</small>
         </div>
       </div>
       <div class="d-flex justify-end items-center mt-4" style="gap: 0.75rem;">
