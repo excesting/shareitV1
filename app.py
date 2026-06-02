@@ -2,19 +2,17 @@ from flask import Flask, request, render_template, jsonify, g, session, redirect
 import os
 import psycopg2
 import psycopg2.extras
+import random
+import string
 from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Import the branch-aware prediction service
 from predict_service import predict_all
 
 app = Flask(__name__)
 
-# Railway / Hosted Postgres URL
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ims")
-
-# Set a secret key for session encryption (Required for logins)
 app.secret_key = 'your_super_secret_key_here'
 
 # ==========================================
@@ -83,9 +81,25 @@ def init_db():
                         role TEXT NOT NULL,
                         branch_id INTEGER NOT NULL
                     );
+                    CREATE TABLE IF NOT EXISTS deliveries (
+                        id SERIAL PRIMARY KEY,
+                        branch_id INTEGER NOT NULL DEFAULT 0,
+                        inventory_id TEXT,
+                        item_name TEXT NOT NULL,
+                        supplier TEXT,
+                        quantity REAL NOT NULL DEFAULT 0,
+                        unit TEXT NOT NULL,
+                        expected_date TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        notes TEXT,
+                        created_at TEXT,
+                        received_at TEXT,
+                        received_quantity REAL,
+                        expiry_date TEXT,
+                        batch_code TEXT UNIQUE
+                    );
                 """)
-                
-                # Automatically create default accounts if none exist
+
                 cursor.execute("SELECT COUNT(*) FROM users")
                 if cursor.fetchone()[0] == 0:
                     default_users = [
@@ -94,7 +108,7 @@ def init_db():
                         ('malvar_mgr', generate_password_hash('malvar123'), 'manager', 1)
                     ]
                     cursor.executemany(
-                        "INSERT INTO users (username, password_hash, role, branch_id) VALUES (%s, %s, %s, %s)", 
+                        "INSERT INTO users (username, password_hash, role, branch_id) VALUES (%s, %s, %s, %s)",
                         default_users
                     )
             conn.commit()
@@ -102,6 +116,19 @@ def init_db():
         print(f"DB Init error: {e}")
 
 init_db()
+
+def run_migrations():
+    """Adds new columns to existing tables without losing data."""
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS expiry_date TEXT")
+            conn.commit()
+    except Exception as e:
+        print(f"Migration error: {e}")
+
+run_migrations()
+
 
 def get_db():
     if "db" not in g:
@@ -142,12 +169,12 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
+
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT * FROM users WHERE username = %s", (username,))
                 user = cur.fetchone()
-                
+
                 if user and check_password_hash(user['password_hash'], password):
                     session['user_id'] = user['id']
                     session['username'] = user['username']
@@ -156,7 +183,7 @@ def login():
                     return redirect(url_for('home'))
                 else:
                     flash('Invalid username or password. Please try again.')
-                
+
     return render_template('login.html')
 
 @app.route('/logout')
@@ -169,17 +196,17 @@ def logout():
 # ==========================================
 @app.route('/')
 @login_required
-def home(): 
+def home():
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         branch_id = get_user_branch()
-        
+
         if branch_id is not None:
             cur.execute("SELECT name, stock, min_level, unit, branch_id FROM inventory WHERE branch_id = %s ORDER BY name ASC", (branch_id,))
         else:
             cur.execute("SELECT name, stock, min_level, unit, branch_id FROM inventory ORDER BY branch_id ASC, name ASC")
-            
+
         inventory_data = [dict(row) for row in cur.fetchall()]
     except Exception as e:
         inventory_data = []
@@ -203,8 +230,16 @@ def daily_log(): return render_template('daily_log.html')
 @login_required
 def predict_page(): return render_template('prediction.html')
 
+@app.route('/deliveries')
+@login_required
+def deliveries_page(): return render_template('deliveries.html')
+
+@app.route('/expiry-tracker')
+@login_required
+def expiry_tracker_page(): return render_template('expiry_tracker.html')
+
 # ==========================================
-# API Routes: Dashboard & Stats (Branch Aware)
+# API Routes: Dashboard & Stats
 # ==========================================
 @app.route('/api/dashboard-stats', methods=['GET'])
 @login_required
@@ -213,7 +248,8 @@ def get_dashboard_stats():
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
+        cutoff = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+
         if branch_id is not None:
             cur.execute("SELECT COUNT(*) as count FROM inventory WHERE branch_id = %s", (branch_id,))
             total_products = cur.fetchone()['count']
@@ -225,6 +261,10 @@ def get_dashboard_stats():
             total_logs = cur.fetchone()['count']
             cur.execute("SELECT COUNT(*) as count FROM prediction_runs WHERE branch_id = %s", (branch_id,))
             total_predictions = cur.fetchone()['count']
+            cur.execute("""SELECT COUNT(*) as count FROM inventory
+                WHERE expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date <= %s AND branch_id = %s
+            """, (cutoff, branch_id))
+            near_expiry = cur.fetchone()['count']
         else:
             cur.execute("SELECT COUNT(*) as count FROM inventory")
             total_products = cur.fetchone()['count']
@@ -236,7 +276,11 @@ def get_dashboard_stats():
             total_logs = cur.fetchone()['count']
             cur.execute("SELECT COUNT(*) as count FROM prediction_runs")
             total_predictions = cur.fetchone()['count']
-        
+            cur.execute("""SELECT COUNT(*) as count FROM inventory
+                WHERE expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date <= %s
+            """, (cutoff,))
+            near_expiry = cur.fetchone()['count']
+
         return jsonify({
             "success": True,
             "stats": {
@@ -244,14 +288,15 @@ def get_dashboard_stats():
                 "lowStockCount": low_stock,
                 "outOfStockCount": out_of_stock,
                 "totalLogs": total_logs,
-                "totalPredictions": total_predictions
+                "totalPredictions": total_predictions,
+                "nearExpiry": near_expiry
             }
         }), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-    
+
 # ==========================================
-# API Routes: Inventory (Branch Aware)
+# API Routes: Inventory
 # ==========================================
 @app.route('/api/inventory', methods=['GET'])
 @login_required
@@ -264,7 +309,7 @@ def get_inventory():
             cur.execute("SELECT * FROM inventory WHERE branch_id = %s ORDER BY name ASC", (branch_id,))
         else:
             cur.execute("SELECT * FROM inventory ORDER BY branch_id ASC, name ASC")
-            
+
         items = [dict(row) for row in cur.fetchall()]
         return jsonify({"success": True, "items": items}), 200
     except Exception as e:
@@ -277,22 +322,24 @@ def save_inventory():
         data = request.get_json()
         db = get_db()
         cur = db.cursor()
-        
+
         item_branch_id = int(data.get('branch_id', session.get('branch_id')))
         if session.get('role') != 'admin' and item_branch_id != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized branch action"}), 403
 
         cur.execute("""
-            INSERT INTO inventory (id, branch_id, name, unit, stock, min_level, max_level, reorder_model, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO inventory (id, branch_id, name, unit, stock, min_level, max_level, reorder_model, updated_at, expiry_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(id) DO UPDATE SET
-                name=excluded.name, unit=excluded.unit, stock=excluded.stock, 
-                min_level=excluded.min_level, max_level=excluded.max_level, 
-                reorder_model=excluded.reorder_model, updated_at=excluded.updated_at
+                name=excluded.name, unit=excluded.unit, stock=excluded.stock,
+                min_level=excluded.min_level, max_level=excluded.max_level,
+                reorder_model=excluded.reorder_model, updated_at=excluded.updated_at,
+                expiry_date=excluded.expiry_date
         """, (
-            data['id'], item_branch_id, data['name'], data['unit'], 
-            float(data.get('stock', 0)), float(data.get('min', 0)), 
-            float(data.get('max', 0)), data.get('reorder_model', 'rop'), datetime.now().isoformat()
+            data['id'], item_branch_id, data['name'], data['unit'],
+            float(data.get('stock', 0)), float(data.get('min', 0)),
+            float(data.get('max', 0)), data.get('reorder_model', 'rop'),
+            datetime.now().isoformat(), data.get('expiry_date') or None
         ))
         db.commit()
         return jsonify({"success": True}), 200
@@ -305,7 +352,7 @@ def delete_inventory(item_id):
     try:
         if session.get('role') != 'admin':
             return jsonify({"success": False, "error": "Only administrators can delete items."}), 403
-            
+
         db = get_db()
         cur = db.cursor()
         cur.execute("DELETE FROM inventory WHERE id = %s", (item_id,))
@@ -314,8 +361,41 @@ def delete_inventory(item_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/inventory/expiring', methods=['GET'])
+@login_required
+def get_expiring_inventory():
+    branch_id = get_user_branch()
+    days = int(request.args.get('days', 7))
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cutoff = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
+        today  = datetime.now().strftime('%Y-%m-%d')
+
+        if branch_id is not None:
+            cur.execute("""
+                SELECT * FROM inventory
+                WHERE expiry_date IS NOT NULL AND expiry_date != ''
+                  AND expiry_date <= %s AND branch_id = %s
+                ORDER BY expiry_date ASC
+            """, (cutoff, branch_id))
+        else:
+            cur.execute("""
+                SELECT * FROM inventory
+                WHERE expiry_date IS NOT NULL AND expiry_date != ''
+                  AND expiry_date <= %s
+                ORDER BY expiry_date ASC
+            """, (cutoff,))
+
+        items = [dict(r) for r in cur.fetchall()]
+        for item in items:
+            item['is_expired'] = item['expiry_date'] < today
+        return jsonify({"success": True, "items": items, "today": today}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # ==========================================
-# API Routes: Daily Logs (UPDATED FOR EAT-ALL-YOU-CAN WASTE MATH)
+# API Routes: Daily Logs
 # ==========================================
 @app.route('/api/daily-logs', methods=['GET'])
 @login_required
@@ -324,20 +404,19 @@ def get_daily_logs():
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
+
         if branch_id is not None:
             cur.execute("SELECT id, date, branch_id, customers, remarks FROM daily_logs WHERE branch_id = %s ORDER BY date DESC", (branch_id,))
         else:
             cur.execute("SELECT id, date, branch_id, customers, remarks FROM daily_logs ORDER BY date DESC")
-            
+
         logs = [dict(row) for row in cur.fetchall()]
         for log in logs:
             cur.execute("SELECT ingredient, qty, waste FROM daily_log_items WHERE log_id = %s", (log['id'],))
             db_items = cur.fetchall()
-            
             log['items'] = {row['ingredient']: row['qty'] for row in db_items if row['qty'] > 0}
             log['waste'] = {row['ingredient']: row['waste'] for row in db_items if row['waste'] > 0}
-            
+
         return jsonify({"success": True, "logs": logs}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -349,7 +428,7 @@ def save_daily_log():
         data = request.get_json()
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
+
         log_branch_id = int(data.get('branch_id', session.get('branch_id')))
         if session.get('role') != 'admin' and log_branch_id != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized branch action"}), 403
@@ -359,43 +438,39 @@ def save_daily_log():
             ON CONFLICT(date, branch_id) DO UPDATE SET customers=excluded.customers, remarks=excluded.remarks
             RETURNING id
         """, (data['date'], log_branch_id, float(data.get('customers', 0)), data.get('remarks', 'Normal')))
-        
+
         log_id = cur.fetchone()['id']
         current_time = datetime.now().isoformat()
-        
+
         items_data = data.get('items', {})
         waste_data = data.get('waste', {})
         all_ingredients = set(items_data.keys()).union(set(waste_data.keys()))
 
         for ingredient in all_ingredients:
-            new_qty = float(items_data.get(ingredient, 0))
+            new_qty   = float(items_data.get(ingredient, 0))
             new_waste = float(waste_data.get(ingredient, 0))
-            
+
             cur.execute("SELECT qty, waste FROM daily_log_items WHERE log_id = %s AND ingredient = %s", (log_id, ingredient))
             old_row = cur.fetchone()
-            
-            # Grab the old values
-            old_qty = old_row['qty'] if old_row else 0.0
+
+            old_qty   = old_row['qty']   if old_row else 0.0
             old_waste = old_row['waste'] if old_row else 0.0
-            
-            # --- NEW MATH ---
-            # Both Consumption AND Waste reduce the total inventory stock.
-            qty_difference = new_qty - old_qty
+
+            qty_difference   = new_qty   - old_qty
             waste_difference = new_waste - old_waste
-            total_deduction = qty_difference + waste_difference
-            
+            total_deduction  = qty_difference + waste_difference
+
             cur.execute("""
                 INSERT INTO daily_log_items (log_id, ingredient, qty, waste) VALUES (%s, %s, %s, %s)
                 ON CONFLICT(log_id, ingredient) DO UPDATE SET qty=excluded.qty, waste=excluded.waste
             """, (log_id, ingredient, new_qty, new_waste))
-            
+
             if total_deduction != 0:
                 cur.execute("""
-                    UPDATE inventory 
-                    SET stock = stock - %s, updated_at = %s
+                    UPDATE inventory SET stock = stock - %s, updated_at = %s
                     WHERE name = %s AND branch_id = %s
                 """, (total_deduction, current_time, ingredient, log_branch_id))
-                
+
         db.commit()
         return jsonify({"success": True, "log_id": log_id}), 200
     except Exception as e:
@@ -408,36 +483,34 @@ def delete_single_daily_log(log_id):
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
+
         cur.execute("SELECT branch_id FROM daily_logs WHERE id = %s", (log_id,))
         log = cur.fetchone()
-        
+
         if not log: return jsonify({"success": False, "error": "Log not found."}), 404
         if session.get('role') != 'admin' and log['branch_id'] != session.get('branch_id'):
             return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-        # Refund BOTH consumed qty and waste back to inventory
         cur.execute("SELECT ingredient, qty, waste FROM daily_log_items WHERE log_id = %s", (log_id,))
         items = cur.fetchall()
-        
+
         current_time = datetime.now().isoformat()
         for item in items:
             total_refund = item['qty'] + item['waste']
             cur.execute("""
-                UPDATE inventory 
-                SET stock = stock + %s, updated_at = %s
+                UPDATE inventory SET stock = stock + %s, updated_at = %s
                 WHERE name = %s AND branch_id = %s
             """, (total_refund, current_time, item['ingredient'], log['branch_id']))
 
         cur.execute("DELETE FROM daily_log_items WHERE log_id = %s", (log_id,))
         cur.execute("DELETE FROM daily_logs WHERE id = %s", (log_id,))
-        
+
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
         db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
-    
+
 @app.route('/api/daily-logs/clear', methods=['DELETE'])
 @login_required
 def clear_all_daily_logs():
@@ -449,21 +522,197 @@ def clear_all_daily_logs():
         cur = db.cursor()
         cur.execute("DELETE FROM daily_logs")
         db.commit()
-        
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-#==========================================
-# PREDICTIONS DELETE API
-#==========================================
+# ==========================================
+# Deliveries
+# ==========================================
+def generate_batch_code(branch_id):
+    branch = 'LPA' if int(branch_id) == 0 else 'MLV'
+    date   = datetime.now().strftime('%Y%m%d')
+    suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    return f'BCH-{branch}-{date}-{suffix}'
+
+@app.route('/api/deliveries', methods=['GET'])
+@login_required
+def get_deliveries():
+    branch_id = get_user_branch()
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        if branch_id is not None:
+            cur.execute("SELECT * FROM deliveries WHERE branch_id = %s ORDER BY expected_date ASC", (branch_id,))
+        else:
+            cur.execute("SELECT * FROM deliveries ORDER BY expected_date ASC")
+        rows = [dict(r) for r in cur.fetchall()]
+        return jsonify({"success": True, "deliveries": rows}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/deliveries', methods=['POST'])
+@login_required
+def create_delivery():
+    try:
+        data = request.get_json()
+        item_branch_id = int(data.get('branch_id', session.get('branch_id')))
+        if session.get('role') != 'admin' and item_branch_id != session.get('branch_id'):
+            return jsonify({"success": False, "error": "Unauthorized branch action"}), 403
+
+        batch_code = generate_batch_code(item_branch_id)
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""
+            INSERT INTO deliveries (branch_id, inventory_id, item_name, supplier, quantity, unit,
+                                    expected_date, status, notes, created_at, expiry_date, batch_code)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            item_branch_id, data.get('inventory_id'), data['item_name'],
+            data.get('supplier', ''), float(data.get('quantity', 0)),
+            data['unit'], data['expected_date'],
+            data.get('notes', ''), datetime.now().isoformat(),
+            data.get('expiry_date') or None, batch_code
+        ))
+        new_id = cur.fetchone()['id']
+        db.commit()
+        return jsonify({"success": True, "id": new_id}), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/deliveries/<int:delivery_id>', methods=['PATCH'])
+@login_required
+def update_delivery(delivery_id):
+    try:
+        data = request.get_json()
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("SELECT * FROM deliveries WHERE id = %s", (delivery_id,))
+        delivery = cur.fetchone()
+        if not delivery:
+            return jsonify({"success": False, "error": "Delivery not found"}), 404
+        if session.get('role') != 'admin' and delivery['branch_id'] != session.get('branch_id'):
+            return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+        new_status   = data.get('status', delivery['status'])
+        now          = datetime.now().isoformat()
+        received_at  = delivery['received_at']
+        received_qty = delivery['received_quantity']
+
+        if new_status == 'received' and delivery['status'] != 'received':
+            received_qty = float(data.get('received_quantity', delivery['quantity']))
+            received_at  = now
+            new_expiry   = data.get('expiry_date', delivery['expiry_date'])
+            inv_id       = data.get('inventory_id', delivery['inventory_id'])
+
+            if inv_id:
+                cur.execute("""
+                    UPDATE inventory SET stock = stock + %s, updated_at = %s,
+                        expiry_date = COALESCE(%s, expiry_date)
+                    WHERE id = %s AND branch_id = %s
+                """, (received_qty, now, new_expiry or None, inv_id, delivery['branch_id']))
+
+        cur.execute("""
+            UPDATE deliveries SET
+                inventory_id = %s, item_name = %s, supplier = %s, quantity = %s, unit = %s,
+                expected_date = %s, status = %s, notes = %s, received_at = %s,
+                received_quantity = %s, expiry_date = %s
+            WHERE id = %s
+        """, (
+            data.get('inventory_id', delivery['inventory_id']),
+            data.get('item_name', delivery['item_name']),
+            data.get('supplier', delivery['supplier']),
+            float(data.get('quantity', delivery['quantity'])),
+            data.get('unit', delivery['unit']),
+            data.get('expected_date', delivery['expected_date']),
+            new_status,
+            data.get('notes', delivery['notes']),
+            received_at, received_qty,
+            data.get('expiry_date', delivery['expiry_date']) or None,
+            delivery_id
+        ))
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/deliveries/<int:delivery_id>', methods=['DELETE'])
+@login_required
+def delete_delivery(delivery_id):
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT branch_id FROM deliveries WHERE id = %s", (delivery_id,))
+        delivery = cur.fetchone()
+        if not delivery:
+            return jsonify({"success": False, "error": "Delivery not found"}), 404
+        if session.get('role') != 'admin' and delivery['branch_id'] != session.get('branch_id'):
+            return jsonify({"success": False, "error": "Unauthorized"}), 403
+        cur.execute("DELETE FROM deliveries WHERE id = %s", (delivery_id,))
+        db.commit()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ==========================================
+# Expiry Tracker
+# ==========================================
+@app.route('/api/expiry-batches', methods=['GET'])
+@login_required
+def get_expiry_batches():
+    branch_id = get_user_branch()
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        today  = datetime.now().strftime('%Y-%m-%d')
+        cutoff = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+
+        if branch_id is not None:
+            cur.execute("""
+                SELECT id, branch_id, inventory_id, item_name, supplier,
+                       received_quantity, quantity, unit,
+                       expected_date, received_at, expiry_date, notes, batch_code
+                FROM deliveries
+                WHERE status = 'received' AND expiry_date IS NOT NULL AND expiry_date != ''
+                  AND branch_id = %s
+                ORDER BY expiry_date ASC
+            """, (branch_id,))
+        else:
+            cur.execute("""
+                SELECT id, branch_id, inventory_id, item_name, supplier,
+                       received_quantity, quantity, unit,
+                       expected_date, received_at, expiry_date, notes, batch_code
+                FROM deliveries
+                WHERE status = 'received' AND expiry_date IS NOT NULL AND expiry_date != ''
+                ORDER BY expiry_date ASC
+            """)
+
+        batches = [dict(r) for r in cur.fetchall()]
+        for b in batches:
+            if b['expiry_date'] < today:
+                b['expiry_status'] = 'expired'
+            elif b['expiry_date'] <= cutoff:
+                b['expiry_status'] = 'soon'
+            else:
+                b['expiry_status'] = 'ok'
+
+        return jsonify({"success": True, "batches": batches, "today": today}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ==========================================
+# Predictions Delete API
+# ==========================================
 @app.route('/api/prediction-history/<int:id>', methods=['DELETE'])
 @login_required
 def delete_prediction_history(id):
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
+
         if session.get('role') != 'admin':
             cur.execute("SELECT branch_id FROM prediction_runs WHERE id = %s", (id,))
             run = cur.fetchone()
@@ -482,28 +731,28 @@ def clear_prediction_history():
     try:
         db = get_db()
         cur = db.cursor()
-        
+
         if session.get('role') != 'admin':
             branch_id = session.get('branch_id')
             cur.execute("DELETE FROM prediction_runs WHERE branch_id = %s", (branch_id,))
         else:
             cur.execute("DELETE FROM prediction_runs")
-            
+
         db.commit()
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-#==========================================
-# SETTINGS & USERS
-#==========================================
+# ==========================================
+# Settings & Users
+# ==========================================
 @app.route('/settings')
 @login_required
 def settings_page():
     if session.get('role') != 'admin':
         flash("Only administrators can access the settings page.")
         return redirect(url_for('home'))
-    
+
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -520,14 +769,14 @@ def settings_page():
 def api_reset_password():
     if session.get('role') != 'admin':
         return jsonify({"success": False, "error": "Unauthorized"}), 403
-        
+
     data = request.get_json()
     user_id = data.get('user_id')
     new_password = data.get('new_password')
-    
+
     if not user_id or not new_password:
         return jsonify({"success": False, "error": "Missing data"}), 400
-        
+
     try:
         hashed_pw = generate_password_hash(new_password)
         db = get_db()
@@ -538,11 +787,10 @@ def api_reset_password():
     except Exception as e:
         db.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
-    
-# ==========================================
-# API Routes: REPORTS ENGINE
-# ==========================================
 
+# ==========================================
+# Reports Engine
+# ==========================================
 @app.route('/reports')
 @login_required
 def reports_page():
@@ -557,10 +805,10 @@ def generate_report():
     start_date = data.get('start_date')
     end_date = data.get('end_date')
     requested_ingredient = data.get('ingredient', 'all')
-    
+
     user_role = session.get('role')
     user_branch_id = session.get('branch_id')
-    
+
     if user_role != 'admin':
         branch_id = str(user_branch_id)
     else:
@@ -569,35 +817,33 @@ def generate_report():
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
     params = []
-    
+
     try:
         if rep_type == "inventory_status":
             branch_filter = ""
             if branch_id != "all":
                 branch_filter = "WHERE branch_id = %s"
                 params.append(int(branch_id))
-                
-            # --- POSTGRES FIX: Changed ? to %s ---
+
             if requested_ingredient != "all":
                 if branch_filter:
                     branch_filter += " AND name = %s"
                 else:
                     branch_filter = "WHERE name = %s"
                 params.append(requested_ingredient)
-                
+
             cur.execute(f"SELECT branch_id, name, unit, stock, min_level, max_level FROM inventory {branch_filter} ORDER BY name", tuple(params))
             rows = cur.fetchall()
             columns = ["Branch", "Item Name", "Unit", "Current Stock", "Min Level", "Max Level", "Status"]
-            
+
             report_data = []
             for r in rows:
                 status = "OK"
                 if r['stock'] <= 0: status = "Out of Stock"
                 elif r['stock'] <= r['min_level']: status = "Low Stock"
-                
                 b_name = "Malvar" if r['branch_id'] == 1 else "Lipa"
                 report_data.append([b_name, r['name'], r['unit'], round(r['stock'], 2), r['min_level'], r['max_level'], status])
-            
+
             return jsonify({"success": True, "title": "Current Inventory Status Report", "columns": columns, "data": report_data})
 
         elif rep_type == "inventory_consumption":
@@ -611,7 +857,6 @@ def generate_report():
                 date_filter = "AND dl.date >= %s AND dl.date <= %s"
                 params.extend([start_date, end_date])
 
-            # --- POSTGRES FIX: Changed ? to %s ---
             if requested_ingredient != "all":
                 date_filter += " AND dli.ingredient = %s"
                 params.append(requested_ingredient)
@@ -646,7 +891,6 @@ def generate_report():
                 date_filter = "AND dl.date >= %s AND dl.date <= %s"
                 params.extend([start_date, end_date])
 
-            # --- POSTGRES FIX: Changed ? to %s ---
             if requested_ingredient != "all":
                 date_filter += " AND dli.ingredient = %s"
                 params.append(requested_ingredient)
@@ -675,32 +919,32 @@ def generate_report():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-    
+
 # ==========================================
-# API Routes: Prediction & Forecasting
+# Prediction & Forecasting
 # ==========================================
 def save_prediction_to_db(result, start_date, end_date, branch_id, remarks):
     db = get_db()
     daily = result.get("daily", [])
     cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    
+
     cur.execute("""
-        INSERT INTO prediction_runs (start_date, end_date, horizon_days, branch_id, remarks) 
+        INSERT INTO prediction_runs (start_date, end_date, horizon_days, branch_id, remarks)
         VALUES (%s, %s, %s, %s, %s) RETURNING id
     """, (start_date, end_date, len(daily), int(branch_id), remarks))
     run_id = cur.fetchone()['id']
-    
+
     for day in daily:
         cur.execute("""
-            INSERT INTO prediction_daily (run_id, date, customers) 
+            INSERT INTO prediction_daily (run_id, date, customers)
             VALUES (%s, %s, %s) RETURNING id
         """, (run_id, day["date"], float(day.get("customers", 0))))
         daily_id = cur.fetchone()['id']
-        
+
         for ingredient, qty in day.get("ingredients", {}).items():
             unit = "L" if "juice" in ingredient.lower() else "kg"
             cur.execute("""
-                INSERT INTO prediction_daily_items (daily_id, ingredient, unit, qty) 
+                INSERT INTO prediction_daily_items (daily_id, ingredient, unit, qty)
                 VALUES (%s, %s, %s, %s)
             """, (daily_id, ingredient, unit, float(qty or 0)))
     db.commit()
@@ -711,33 +955,32 @@ def save_prediction_to_db(result, start_date, end_date, branch_id, remarks):
 def api_predict_range():
     data = request.get_json(silent=True) or {}
     start_date = data.get("start_date")
-    end_date = data.get("end_date")
-    remarks = data.get("remarks", "Normal")
-    
+    end_date   = data.get("end_date")
+    remarks    = data.get("remarks", "Normal")
+
     if session.get('role') == 'admin':
         branch_id = int(data.get("branch_id", session.get('branch_id', 0)))
     else:
         branch_id = int(session.get('branch_id', 0))
-    
+
     if not start_date or not end_date:
         return jsonify({"success": False, "error": "Missing inputs"}), 400
-        
+
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
         sd = datetime.strptime(start_date, "%Y-%m-%d").date()
         ed = datetime.strptime(end_date, "%Y-%m-%d").date()
-        
+
         total_customers, total_ingredients, daily = 0, {}, []
-        last_day_customers = 0 
+        last_day_customers = 0
         cur_date = sd
-        
+
         while cur_date <= ed:
-            date_str = cur_date.strftime("%Y-%m-%d")
-            
+            date_str  = cur_date.strftime("%Y-%m-%d")
             yesterday = (cur_date - timedelta(days=1)).strftime("%Y-%m-%d")
             last_week = (cur_date - timedelta(days=7)).strftime("%Y-%m-%d")
-            
+
             def get_hist(target_date):
                 cur.execute("SELECT customers FROM daily_logs WHERE date=%s AND branch_id=%s", (target_date, branch_id))
                 row = cur.fetchone()
@@ -746,26 +989,24 @@ def api_predict_range():
             lag1 = last_day_customers if last_day_customers > 0 else get_hist(yesterday)
             lag7 = get_hist(last_week)
 
-            out = predict_all(date_str=date_str, branch_id=branch_id, cust_lag_1=lag1, cust_lag_7=lag7, remarks=remarks)
-            
+            out  = predict_all(date_str=date_str, branch_id=branch_id, cust_lag_1=lag1, cust_lag_7=lag7, remarks=remarks)
             cust = out.get("customers_pred", 0)
-            ing = out.get("ingredients_pred", {})
-            
+            ing  = out.get("ingredients_pred", {})
+
             last_day_customers = cust
-            total_customers += cust
+            total_customers   += cust
             for k, v in ing.items():
                 total_ingredients[k] = total_ingredients.get(k, 0.0) + float(v)
-                
+
             daily.append({"date": date_str, "customers": cust, "ingredients": ing})
             cur_date += timedelta(days=1)
-            
+
         res = {
-            "success": True, 
-            "range": {"start_date": start_date, "end_date": end_date, "days": (ed - sd).days + 1}, 
-            "totals": {"customers": total_customers, "ingredients": total_ingredients}, 
+            "success": True,
+            "range": {"start_date": start_date, "end_date": end_date, "days": (ed - sd).days + 1},
+            "totals": {"customers": total_customers, "ingredients": total_ingredients},
             "daily": daily
         }
-        
         res["prediction_id"] = save_prediction_to_db(res, start_date, end_date, branch_id, remarks)
         return jsonify(res), 200
     except Exception as e:
@@ -777,37 +1018,32 @@ def get_latest_prediction():
     branch_id = get_user_branch()
     if branch_id is None:
         branch_id = 0
-        
+
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
+
         cur.execute("""
-            SELECT id, start_date, end_date FROM prediction_runs 
+            SELECT id, start_date, end_date FROM prediction_runs
             WHERE branch_id = %s ORDER BY id DESC LIMIT 1
         """, (branch_id,))
         run = cur.fetchone()
-        
+
         if not run:
             return jsonify({"success": False, "error": "No predictions found"}), 404
-            
+
         run_id = run['id']
         cur.execute("SELECT id, date, customers FROM prediction_daily WHERE run_id = %s", (run_id,))
         days = cur.fetchall()
-        
+
         daily_data = []
         for day in days:
             daily_id = day['id']
             cur.execute("SELECT ingredient, qty FROM prediction_daily_items WHERE daily_id = %s", (daily_id,))
             items = cur.fetchall()
-            
             ingredients = {item['ingredient']: item['qty'] for item in items}
-            daily_data.append({
-                "date": day['date'],
-                "customers": day['customers'],
-                "ingredients": ingredients
-            })
-            
+            daily_data.append({"date": day['date'], "customers": day['customers'], "ingredients": ingredients})
+
         return jsonify({
             "success": True,
             "start_date": run['start_date'],
@@ -824,33 +1060,38 @@ def get_prediction_history():
     try:
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
+
         if branch_id is not None:
             cur.execute("""
-                SELECT r.id, r.start_date, r.end_date, r.branch_id, r.remarks, COALESCE(SUM(d.customers), 0) as total_customers
-                FROM prediction_runs r LEFT JOIN prediction_daily d ON r.id = d.run_id 
+                SELECT r.id, r.start_date, r.end_date, r.branch_id, r.remarks,
+                       COALESCE(SUM(d.customers), 0) as total_customers
+                FROM prediction_runs r LEFT JOIN prediction_daily d ON r.id = d.run_id
                 WHERE r.branch_id = %s
                 GROUP BY r.id ORDER BY r.id DESC LIMIT 50
             """, (branch_id,))
         else:
             cur.execute("""
-                SELECT r.id, r.start_date, r.end_date, r.branch_id, r.remarks, COALESCE(SUM(d.customers), 0) as total_customers
-                FROM prediction_runs r LEFT JOIN prediction_daily d ON r.id = d.run_id 
+                SELECT r.id, r.start_date, r.end_date, r.branch_id, r.remarks,
+                       COALESCE(SUM(d.customers), 0) as total_customers
+                FROM prediction_runs r LEFT JOIN prediction_daily d ON r.id = d.run_id
                 GROUP BY r.id ORDER BY r.id DESC LIMIT 50
             """)
-            
+
         runs = [dict(row) for row in cur.fetchall()]
         for run in runs:
             cur.execute("""
-                SELECT pdi.ingredient, pdi.unit, SUM(pdi.qty) as total_qty FROM prediction_daily_items pdi
-                JOIN prediction_daily pd ON pdi.daily_id = pd.id 
+                SELECT pdi.ingredient, pdi.unit, SUM(pdi.qty) as total_qty
+                FROM prediction_daily_items pdi
+                JOIN prediction_daily pd ON pdi.daily_id = pd.id
                 WHERE pd.run_id = %s GROUP BY pdi.ingredient, pdi.unit ORDER BY total_qty DESC LIMIT 3
             """, (run['id'],))
             items = cur.fetchall()
             run['top_items'] = ", ".join([f"{i['ingredient']}: {i['total_qty']:.1f}{i['unit']}" for i in items]) if items else "-"
+
         return jsonify({"success": True, "history": runs}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
